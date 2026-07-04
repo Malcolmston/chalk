@@ -1,0 +1,19 @@
+import { CompareCard, hi } from 'go-ui';
+import type { Lib } from '../data';
+
+export interface NodeVsGoProps {
+  lib: Lib;
+}
+
+// NodeVsGo renders the side-by-side Node.js → Go comparison columns.
+export function NodeVsGo({ lib }: NodeVsGoProps) {
+  return (
+    <>
+      <div className="sec-h" id="overview-cmp"><span className="bar" /><h3 style={{ margin: 0 }}>Node.js → Go</h3></div>
+      <div className="compare">
+        <CompareCard name="Node.js" color="var(--node)" html={hi(lib.node_code)} />
+        <CompareCard name="Go" color="var(--go)" html={hi(lib.go_code)} />
+      </div>
+    </>
+  );
+}

@@ -99,7 +99,7 @@ func collectPackages(root, modPath string) ([]pkgInfo, error) {
 		}
 		base := info.Name()
 		if path != root && (base == "testdata" || base == "_site" || base == ".git" ||
-			strings.HasPrefix(base, ".") || base == "node_modules") {
+			strings.HasPrefix(base, ".") || base == "node_modules" || base == "vendor") {
 			return filepath.SkipDir
 		}
 		p, ok := parsePackage(path, root, modPath)
