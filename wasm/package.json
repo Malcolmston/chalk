@@ -1,0 +1,14 @@
+{
+  "name": "@malcolmston/chalk",
+  "version": "0.1.0",
+  "description": "chalk for Node.js — the Go implementation, callable from Node via WebAssembly.",
+  "type": "module",
+  "main": "./chalk.mjs",
+  "exports": { ".": "./chalk.mjs" },
+  "files": ["chalk.mjs", "chalk.wasm", "wasm_exec.js", "README.md"],
+  "scripts": { "build": "./build.sh", "test": "node test.mjs" },
+  "engines": { "node": ">=18" },
+  "keywords": ["chalk", "ansi", "colors", "terminal", "figlet", "wasm", "go"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/malcolmston/chalk", "directory": "wasm" }
+}

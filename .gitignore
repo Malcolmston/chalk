@@ -31,5 +31,3 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# wasm build artifacts
-*.wasm
