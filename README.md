@@ -95,8 +95,25 @@ fmt.Println(f.Render("Custom", figlet.Options{Layout: figlet.LayoutSmush}))
 ```
 
 The engine implements FIGfont parsing and the horizontal layout modes
-(full-width, kerning, and smushing with the standard rules). A compact block
-font is built in; load real `.flf` fonts for more styles.
+(full-width, kerning, and smushing with the standard rules).
+
+### Fonts & color
+
+Several fonts are built in and registered by name; load real `.flf` fonts from a
+directory to add more:
+
+```go
+figlet.Fonts()                       // ["at","block","dark","dots","light","medium","plus","standard","stars"]
+out, _ := figlet.RenderFont("block", "Hi")
+figlet.LoadFontDir("./fonts")        // register every .flf in a directory
+```
+
+Pipe banners through gradients or a rainbow (uses chalk truecolor):
+
+```go
+fmt.Println(figlet.RenderGradient("Hello", "#ff0080", "#00d7ff"))
+fmt.Println(figlet.RenderRainbow("Rainbow"))
+```
 
 ## Examples
 
