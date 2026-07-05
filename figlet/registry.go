@@ -52,6 +52,7 @@ func RenderFont(name, text string, opts ...Options) (string, error) {
 
 type unknownFontError struct{ name string }
 
+// Error implements the error interface.
 func (e *unknownFontError) Error() string { return "figlet: unknown font " + e.name }
 
 // LoadFontDir parses every .flf FIGfont in dir and registers each under its

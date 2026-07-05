@@ -8,20 +8,28 @@ import (
 
 // SelectConfig configures Select.
 type SelectConfig struct {
+	// Message is the question shown to the user.
 	Message string
+	// Choices are the selectable options.
 	Choices []Choice
 	// Default is the initially highlighted index.
 	Default int
-	In      io.Reader
-	Out     io.Writer
+	// In is the input source (defaults to os.Stdin).
+	In io.Reader
+	// Out is the output destination (defaults to os.Stdout).
+	Out io.Writer
 }
 
 // MultiSelectConfig configures MultiSelect.
 type MultiSelectConfig struct {
+	// Message is the question shown to the user.
 	Message string
+	// Choices are the selectable options.
 	Choices []Choice
-	In      io.Reader
-	Out     io.Writer
+	// In is the input source (defaults to os.Stdin).
+	In io.Reader
+	// Out is the output destination (defaults to os.Stdout).
+	Out io.Writer
 }
 
 // renderFrame clears the previous frame (prevLines tall) and writes content,

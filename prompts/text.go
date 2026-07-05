@@ -10,43 +10,67 @@ import (
 
 // InputConfig configures Input.
 type InputConfig struct {
-	Message   string
-	Default   string
-	Validate  func(string) error
+	// Message is the question shown to the user.
+	Message string
+	// Default is returned when the user submits an empty line.
+	Default string
+	// Validate, when set, must return nil to accept the input; a non-nil error
+	// re-prompts with the error message.
+	Validate func(string) error
+	// Transform, when set, post-processes the accepted value before it is returned.
 	Transform func(string) string
-	In        io.Reader
-	Out       io.Writer
+	// In is the input source (defaults to os.Stdin).
+	In io.Reader
+	// Out is the output destination (defaults to os.Stdout).
+	Out io.Writer
 }
 
 // PasswordConfig configures Password.
 type PasswordConfig struct {
-	Message  string
+	// Message is the question shown to the user.
+	Message string
+	// Validate, when set, must return nil to accept the input; a non-nil error
+	// re-prompts with the error message.
 	Validate func(string) error
 	// Mask, when non-zero, echoes this rune for each character; when zero the
 	// input is hidden entirely.
 	Mask rune
-	In   io.Reader
-	Out  io.Writer
+	// In is the input source (defaults to os.Stdin).
+	In io.Reader
+	// Out is the output destination (defaults to os.Stdout).
+	Out io.Writer
 }
 
 // ConfirmConfig configures Confirm.
 type ConfirmConfig struct {
+	// Message is the question shown to the user.
 	Message string
+	// Default is the answer used when the user submits an empty line.
 	Default bool
-	In      io.Reader
-	Out     io.Writer
+	// In is the input source (defaults to os.Stdin).
+	In io.Reader
+	// Out is the output destination (defaults to os.Stdout).
+	Out io.Writer
 }
 
 // NumberConfig configures Number.
 type NumberConfig struct {
-	Message  string
-	Default  *float64
-	Min      *float64
-	Max      *float64
-	Integer  bool
+	// Message is the question shown to the user.
+	Message string
+	// Default, when non-nil, is returned for an empty line.
+	Default *float64
+	// Min, when non-nil, is the inclusive lower bound.
+	Min *float64
+	// Max, when non-nil, is the inclusive upper bound.
+	Max *float64
+	// Integer requires the value to be a whole number.
+	Integer bool
+	// Validate, when set, is an extra check applied to the parsed value.
 	Validate func(float64) error
-	In       io.Reader
-	Out      io.Writer
+	// In is the input source (defaults to os.Stdin).
+	In io.Reader
+	// Out is the output destination (defaults to os.Stdout).
+	Out io.Writer
 }
 
 // renderPrompt builds the "? message (default) " line.
@@ -201,6 +225,7 @@ func Number(cfg NumberConfig) (float64, error) {
 
 type simpleError string
 
+// Error implements the error interface.
 func (e simpleError) Error() string { return string(e) }
 
 const (
@@ -214,6 +239,7 @@ type boundError struct {
 	n   float64
 }
 
+// Error implements the error interface.
 func (e *boundError) Error() string {
 	return e.rel + " " + chalk.Strip(strconv.FormatFloat(e.n, 'g', -1, 64))
 }

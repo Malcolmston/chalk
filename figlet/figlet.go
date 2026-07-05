@@ -46,6 +46,8 @@ func (f *Font) Height() int { return f.height }
 
 // Options configures a render.
 type Options struct {
+	// Layout selects how adjacent characters are combined horizontally;
+	// LayoutDefault uses the font's own settings.
 	Layout Layout
 	// Width, when > 0, wraps output to this many columns.
 	Width int
