@@ -1,10 +1,51 @@
 // Package figlet renders text as ASCII-art banners using FIGfont, a Go port of
-// the classic figlet / Node figlet library. It ships a built-in font and can
-// load any standard .flf FIGfont.
+// the classic figlet program and the Node figlet library. It ships a built-in
+// block font plus a large registry of bundled variants, and it can load any
+// standard .flf FIGfont from a file, directory or reader.
 //
 //	fmt.Println(figlet.Render("Hi!"))                    // built-in font
 //	f, _ := figlet.LoadFontFile("slant.flf")
 //	fmt.Println(f.Render("Hello"))
+//
+// Use figlet to draw large banner text for CLI splash screens, section headers
+// in logs, or generated README art. The simplest entry point is [Render], which
+// renders a string with the built-in font; [RenderFont] renders with a named
+// font from the registry (see [Fonts] and [GetFont]); and a [Font] value
+// obtained from [LoadFont], [LoadFontFile] or [ParseFont] can render directly
+// with [Font.Render]. The companion helpers [RenderRainbow] and [RenderGradient]
+// (and the lower-level [Rainbow] and [Gradient]) colorize a finished banner with
+// the sibling chalk package.
+//
+// A FIGfont describes each printable character as a small block of text rows,
+// all the same height. Rendering lays the glyphs for the input left to right and
+// combines each pair of adjacent glyphs according to a [Layout]: full width
+// leaves them separate, kerning slides them together until they touch, and
+// smushing overlaps their touching edges and fuses the overlapping cells using
+// the font's "smushing rules". [LayoutDefault] honors whatever the font's header
+// specifies. Fonts may use a "hardblank" character that occupies space during
+// layout but prints as a blank, which is how figlet keeps letters from fusing
+// into an unreadable blob; hardblanks are replaced with spaces in the final
+// output.
+//
+// Important semantics and edge cases: input is split on newlines and each line
+// is rendered as its own block, so multi-line input produces stacked banners.
+// Characters the font does not define fall back to the uppercase form (so fonts
+// that only define capitals still render mixed-case text) and finally to a
+// space, meaning unknown runes never abort a render. [ParseFont] validates the
+// flf2a signature and header and returns an error for a malformed font, but it
+// tolerates a truncated glyph table by rendering whatever characters it managed
+// to read. Output is plain text containing no ANSI codes unless you pass it
+// through one of the color helpers.
+//
+// Parity with the original tools is partial and deliberate. The .flf format,
+// the four layout modes and the standard horizontal smushing rules (equal
+// character, underscore, hierarchy, opposite pair, big-X and hardblank) are all
+// implemented, so real-world fonts render faithfully. What is intentionally left
+// out is vertical smushing, right-to-left print direction, control files (.flc)
+// and character-code remapping. In exchange this port bundles its own fonts and
+// programmatically generates roughly a thousand named variants (see
+// fonts_generated.go) so useful output is available with zero external font
+// files.
 package figlet
 
 import (
