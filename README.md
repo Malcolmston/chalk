@@ -1,5 +1,11 @@
 # chalk
 
+[![CI](https://github.com/Malcolmston/chalk/actions/workflows/ci.yml/badge.svg)](https://github.com/Malcolmston/chalk/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/malcolmston/chalk.svg)](https://pkg.go.dev/github.com/malcolmston/chalk)
+[![Go Report Card](https://goreportcard.com/badge/github.com/malcolmston/chalk)](https://goreportcard.com/report/github.com/malcolmston/chalk)
+[![Release](https://img.shields.io/github/v/release/Malcolmston/chalk?sort=semver)](https://github.com/Malcolmston/chalk/releases)
+[![Docs](https://img.shields.io/badge/docs-pages-2f9bff)](https://malcolmston.github.io/chalk/)
+
 **Node's chalk, inquirer, and figlet — for Go.**
 
 `chalk` brings expressive terminal styling to Go, plus interactive prompts
