@@ -84,12 +84,12 @@ age, _  := prompts.Number(prompts.NumberConfig{Message: "Age?", Integer: true})
 
 i, choice, _ := prompts.Select(prompts.SelectConfig{
 	Message: "Pick one",
-	Choices: []prompts.Choice{{Name: "Red"}, {Name: "Green"}, {Name: "Blue"}},
+	Choices: []prompts.Choice{ {Name: "Red"}, {Name: "Green"}, {Name: "Blue"} },
 })
 
 idxs, chosen, _ := prompts.MultiSelect(prompts.MultiSelectConfig{
 	Message: "Pick many",
-	Choices: []prompts.Choice{{Name: "a"}, {Name: "b", Checked: true}, {Name: "c"}},
+	Choices: []prompts.Choice{ {Name: "a"}, {Name: "b", Checked: true}, {Name: "c"} },
 })
 ```
 
