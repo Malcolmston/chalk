@@ -1,13 +1,57 @@
 // Package chalk is a Go port of Node's chalk — expressive terminal string
-// styling. Styles are chainable and compose naturally:
+// styling. Like the original JavaScript library, it wraps text in ANSI SGR
+// (Select Graphic Rendition) escape sequences so that terminals render it with
+// color, weight and other attributes. Styles are chainable and compose
+// naturally:
 //
 //	fmt.Println(chalk.New().Red().Bold().Sprint("error!"))
 //	fmt.Println(chalk.Green("ok"))                 // package shortcut
 //	fmt.Println(chalk.New().Hex("#ff8800").Sprint("orange"))
 //
+// Reach for chalk whenever a command-line program wants to highlight output —
+// errors in red, success in green, hints in a dim gray — without hand-writing
+// escape codes or pulling in a dependency. The package is standard-library only.
+// Every entry point comes in two flavors: a fluent [Style] built with [New] and
+// chained methods for reuse, and package-level shortcuts such as [Red] or [Hex]
+// for one-off styling. A [Style] is immutable — each method returns a new value
+// — so a configured style is safe to store and share across goroutines.
+//
+// Internally a [Style] records a list of open/close SGR code pairs. At render
+// time each pair is emitted as an escape sequence of the form ESC[<codes>m
+// around the text, applying the innermost style first so that outer styles
+// re-assert themselves. When a piece of text already contains a matching close
+// code (from a nested style), chalk re-opens the outer style immediately after
+// it, mirroring the "style bleed" fix in Node chalk so nested colors survive.
+// Foreground and background colors, the 16 basic and 16 bright ANSI colors, the
+// 256-color palette ([Style.Ansi256]), 24-bit truecolor ([Style.RGB]) and hex
+// strings ([Style.Hex]) are all supported.
+//
 // Color output is enabled automatically when stdout is a terminal and NO_COLOR
-// is unset; it degrades gracefully from truecolor to 256 to 16 colors based on
-// the detected terminal capability.
+// is unset. Detection follows the same conventions as the Node ecosystem: the
+// [Level] is derived from NO_COLOR, FORCE_COLOR, COLORTERM and TERM (see
+// [GetLevel] and [SetLevel]). Truecolor and 256-color requests degrade
+// gracefully down to the nearest color the terminal actually supports, so an
+// [Style.RGB] call still produces reasonable output on a 16-color terminal and
+// emits nothing at all when the level is [LevelNone]. Detection happens once and
+// is cached; [ResetDetection] forces a re-detect and [SetLevel] pins a fixed
+// level, which is the recommended way to get deterministic output in tests.
+//
+// A handful of edge cases are worth knowing. When color is disabled the render
+// methods return the input text unchanged, so it is always safe to wrap output
+// in a style. [Strip] removes SGR sequences from a string and [VisibleLength]
+// reports the on-screen width (counting runes, not bytes, and ignoring escape
+// codes), which is useful for laying out tables or padding colored columns.
+// Because detection keys off os.Stdout, redirecting output to a file or pipe
+// disables color automatically unless FORCE_COLOR overrides it.
+//
+// Parity with Node chalk is close but not exact. The chainable API, automatic
+// level detection, the NO_COLOR/FORCE_COLOR conventions and the truecolor→256→16
+// downgrade all match. The differences are idiomatic: styling is applied with
+// Sprint/Sprintf/Println methods (and package shortcuts) rather than by calling
+// the style as a function, template literal tagging is not provided, and the
+// global level is process-wide rather than per-instance. Rarely supported
+// attributes such as [Style.Italic] and [Style.Overline] are included for
+// completeness even though not every terminal honors them.
 package chalk
 
 import (
