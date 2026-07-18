@@ -1,0 +1,10 @@
+{
+  "repo": "chalk",
+  "upstream": "chalk/chalk",
+  "parityBefore": "83%",
+  "parityAfter": "100%",
+  "upstreamCasesSynced": 30,
+  "gapsFound": 5,
+  "gapsClosed": 5,
+  "asOf": "2026-07-18"
+}

@@ -106,7 +106,15 @@ func (s *Style) effectiveLevel() Level {
 }
 
 // render wraps text in this style's SGR codes (unless color is disabled),
-// handling nested styles by re-opening after any inner close code.
+// handling nested styles by re-opening after any inner close code and closing
+// then re-opening the style around every line break.
+//
+// Two edge cases mirror Node chalk exactly. Empty input yields no escape codes
+// at all (chalk.red() === ”), so it is always safe to style a possibly-empty
+// value. And line breaks close the active style before each newline and re-open
+// it afterwards, so colors do not bleed across lines and each visual line is
+// styled independently; both LF ("\n") and CRLF ("\r\n") are handled, with the
+// carriage return preserved ahead of the closing code.
 func (s *Style) render(text string) string {
 	if s.visibleOnly && s.effectiveLevel() == LevelNone {
 		return ""
@@ -114,7 +122,33 @@ func (s *Style) render(text string) string {
 	if s.effectiveLevel() == LevelNone || len(s.parts) == 0 {
 		return text
 	}
-	// Apply innermost first so outer styles re-assert after inner resets.
+	// Empty input produces no escape codes, matching Node chalk.
+	if text == "" {
+		return ""
+	}
+	// Close and re-open the style around each line break so colors never bleed
+	// across lines (Node chalk's stringEncaseCRLFWithFirstIndex behavior).
+	if strings.IndexByte(text, '\n') >= 0 {
+		lines := strings.Split(text, "\n")
+		for i, line := range lines {
+			cr := ""
+			if strings.HasSuffix(line, "\r") {
+				line = line[:len(line)-1]
+				cr = "\r"
+			}
+			lines[i] = s.wrap(line) + cr
+		}
+		return strings.Join(lines, "\n")
+	}
+	return s.wrap(text)
+}
+
+// wrap encloses a single line (no newline) in this style's SGR codes, applying
+// the innermost pair first so outer styles re-assert after an inner reset. When
+// the line already contains one of this style's close codes (from a nested
+// style of the same type) the outer style is re-opened immediately after it so
+// nested colors survive — the "style bleed" fix from Node chalk.
+func (s *Style) wrap(text string) string {
 	for i := len(s.parts) - 1; i >= 0; i-- {
 		p := s.parts[i]
 		openSeq := esc + p.open + "m"
