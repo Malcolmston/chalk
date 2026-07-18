@@ -73,6 +73,9 @@ type Style struct {
 	parts []sgr
 	// level overrides the global color level for this style when non-nil.
 	level *Level
+	// visibleOnly, when set, suppresses all output while color is disabled
+	// (the chalk ".visible" modifier).
+	visibleOnly bool
 }
 
 // New returns an empty Style.
@@ -80,7 +83,7 @@ func New() *Style { return &Style{} }
 
 // with returns a copy of the style with an additional SGR pair.
 func (s *Style) with(open, close string) *Style {
-	cp := &Style{parts: make([]sgr, len(s.parts), len(s.parts)+1), level: s.level}
+	cp := &Style{parts: make([]sgr, len(s.parts), len(s.parts)+1), level: s.level, visibleOnly: s.visibleOnly}
 	copy(cp.parts, s.parts)
 	cp.parts = append(cp.parts, sgr{open: open, close: close})
 	return cp
@@ -105,6 +108,9 @@ func (s *Style) effectiveLevel() Level {
 // render wraps text in this style's SGR codes (unless color is disabled),
 // handling nested styles by re-opening after any inner close code.
 func (s *Style) render(text string) string {
+	if s.visibleOnly && s.effectiveLevel() == LevelNone {
+		return ""
+	}
 	if s.effectiveLevel() == LevelNone || len(s.parts) == 0 {
 		return text
 	}
