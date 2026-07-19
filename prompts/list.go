@@ -32,6 +32,23 @@ type MultiSelectConfig struct {
 	Out io.Writer
 }
 
+// entriesToDisplay determines which slice of a list to show given the currently
+// selected cursor, the total number of entries, and the maximum visible window.
+// It is a direct port of upstream terkelg/prompts' lib/util/entriesToDisplay.js
+// and is used to page long Select / MultiSelect lists. A maxVisible of 0 means
+// "show everything" (the upstream default when the option is omitted).
+func entriesToDisplay(cursor, total, maxVisible int) (startIndex, endIndex int) {
+	if maxVisible == 0 {
+		maxVisible = total
+	}
+	startIndex = min(total-maxVisible, cursor-maxVisible/2)
+	if startIndex < 0 {
+		startIndex = 0
+	}
+	endIndex = min(startIndex+maxVisible, total)
+	return startIndex, endIndex
+}
+
 // renderFrame clears the previous frame (prevLines tall) and writes content,
 // returning the new frame's line count. Content lines must end in "\r\n".
 func renderFrame(out io.Writer, prevLines int, content string) int {
