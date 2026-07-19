@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-19
+### Added
+- **Upstream-parity tests** for the `figlet` and `prompts` sub-packages, verified
+  against patorjk/figlet.js and terkelg/prompts (real `.flf` fonts + expected art
+  bundled under `figlet/testdata`); `parity.json` published.
+### Changed
+- 100% exported-symbol API-doc coverage across the module.
+
 ## [0.3.0] - 2026-07-18
 ### Added
 - Color-space conversions mirroring Node chalk's ansi-styles / color-convert:
