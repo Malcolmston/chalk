@@ -28,8 +28,9 @@
 //
 // Color output is enabled automatically when stdout is a terminal and NO_COLOR
 // is unset. Detection follows the same conventions as the Node ecosystem: the
-// [Level] is derived from NO_COLOR, FORCE_COLOR, COLORTERM and TERM (see
-// [GetLevel] and [SetLevel]). Truecolor and 256-color requests degrade
+// [Level] is derived from NO_COLOR, FORCE_COLOR, the CI provider variables,
+// COLORTERM, TERM_PROGRAM and TERM, in the precedence documented on
+// [GetLevel] and [SetLevel] (and in full on the unexported detectLevel). Truecolor and 256-color requests degrade
 // gracefully down to the nearest color the terminal actually supports, so an
 // [Style.RGB] call still produces reasonable output on a 16-color terminal and
 // emits nothing at all when the level is [LevelNone]. Detection happens once and
@@ -38,9 +39,10 @@
 //
 // A handful of edge cases are worth knowing. When color is disabled the render
 // methods return the input text unchanged, so it is always safe to wrap output
-// in a style. [Strip] removes SGR sequences from a string and [VisibleLength]
-// reports the on-screen width (counting runes, not bytes, and ignoring escape
-// codes), which is useful for laying out tables or padding colored columns.
+// in a style. [Strip] removes escape sequences from a string, [VisibleLength]
+// counts the visible runes and [VisibleWidth] counts the terminal cells they
+// occupy — the last is the one to pad with when laying out tables or columns,
+// because a CJK character or emoji is one rune but two cells wide.
 // Because detection keys off os.Stdout, redirecting output to a file or pipe
 // disables color automatically unless FORCE_COLOR overrides it.
 //
@@ -62,9 +64,27 @@ import (
 const esc = "\x1b["
 
 // style is one open/close SGR pair applied to text.
+//
+// Most pairs are fixed strings ("31"/"39" for red). Color models that degrade
+// with the terminal's capability — 256-color, truecolor, hex and the HSL/HSV/HWB
+// wrappers — instead carry a dyn function so the concrete escape code is chosen
+// at render time from the level in force then, not from the level that happened
+// to be active when the style was built. That matters because a Style is a
+// reusable value: chalk.New().RGB(…) stored in a package variable must still
+// emit truecolor after a later SetLevel, and .Level() must be able to override a
+// color that was chained before it.
 type sgr struct {
 	open  string
 	close string
+	dyn   func(Level) string
+}
+
+// openAt returns the opening SGR parameters for this pair at the given level.
+func (p sgr) openAt(l Level) string {
+	if p.dyn != nil {
+		return p.dyn(l)
+	}
+	return p.open
 }
 
 // Style is an immutable, chainable set of terminal styles. Build one with New()
@@ -81,11 +101,21 @@ type Style struct {
 // New returns an empty Style.
 func New() *Style { return &Style{} }
 
-// with returns a copy of the style with an additional SGR pair.
+// with returns a copy of the style with an additional fixed SGR pair.
 func (s *Style) with(open, close string) *Style {
+	return s.withPair(sgr{open: open, close: close})
+}
+
+// withDyn returns a copy of the style with an additional SGR pair whose opening
+// code is resolved at render time from the effective color level.
+func (s *Style) withDyn(dyn func(Level) string, close string) *Style {
+	return s.withPair(sgr{close: close, dyn: dyn})
+}
+
+func (s *Style) withPair(p sgr) *Style {
 	cp := &Style{parts: make([]sgr, len(s.parts), len(s.parts)+1), level: s.level, visibleOnly: s.visibleOnly}
 	copy(cp.parts, s.parts)
-	cp.parts = append(cp.parts, sgr{open: open, close: close})
+	cp.parts = append(cp.parts, p)
 	return cp
 }
 
@@ -116,10 +146,11 @@ func (s *Style) effectiveLevel() Level {
 // styled independently; both LF ("\n") and CRLF ("\r\n") are handled, with the
 // carriage return preserved ahead of the closing code.
 func (s *Style) render(text string) string {
-	if s.visibleOnly && s.effectiveLevel() == LevelNone {
+	level := s.effectiveLevel()
+	if s.visibleOnly && level == LevelNone {
 		return ""
 	}
-	if s.effectiveLevel() == LevelNone || len(s.parts) == 0 {
+	if level == LevelNone || len(s.parts) == 0 {
 		return text
 	}
 	// Empty input produces no escape codes, matching Node chalk.
@@ -136,11 +167,11 @@ func (s *Style) render(text string) string {
 				line = line[:len(line)-1]
 				cr = "\r"
 			}
-			lines[i] = s.wrap(line) + cr
+			lines[i] = s.wrap(line, level) + cr
 		}
 		return strings.Join(lines, "\n")
 	}
-	return s.wrap(text)
+	return s.wrap(text, level)
 }
 
 // wrap encloses a single line (no newline) in this style's SGR codes, applying
@@ -148,10 +179,10 @@ func (s *Style) render(text string) string {
 // the line already contains one of this style's close codes (from a nested
 // style of the same type) the outer style is re-opened immediately after it so
 // nested colors survive — the "style bleed" fix from Node chalk.
-func (s *Style) wrap(text string) string {
+func (s *Style) wrap(text string, level Level) string {
 	for i := len(s.parts) - 1; i >= 0; i-- {
 		p := s.parts[i]
-		openSeq := esc + p.open + "m"
+		openSeq := esc + p.openAt(level) + "m"
 		closeSeq := esc + p.close + "m"
 		if strings.Contains(text, closeSeq) {
 			text = strings.ReplaceAll(text, closeSeq, closeSeq+openSeq)

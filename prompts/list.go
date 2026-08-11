@@ -14,6 +14,10 @@ type SelectConfig struct {
 	Choices []Choice
 	// Default is the initially highlighted index.
 	Default int
+	// MaxVisible caps how many choices are shown at once, scrolling the list
+	// around the highlighted entry. Zero shows every choice. This is upstream
+	// prompts' "limit" option.
+	MaxVisible int
 	// In is the input source (defaults to os.Stdin).
 	In io.Reader
 	// Out is the output destination (defaults to os.Stdout).
@@ -26,6 +30,9 @@ type MultiSelectConfig struct {
 	Message string
 	// Choices are the selectable options.
 	Choices []Choice
+	// MaxVisible caps how many choices are shown at once, scrolling the list
+	// around the highlighted entry. Zero shows every choice.
+	MaxVisible int
 	// In is the input source (defaults to os.Stdin).
 	In io.Reader
 	// Out is the output destination (defaults to os.Stdout).
@@ -86,12 +93,41 @@ func firstSelectable(choices []Choice, start int) int {
 	return step(choices, start, 1)
 }
 
+// hasSelectable reports whether at least one choice can be picked.
+func hasSelectable(choices []Choice) bool {
+	for _, c := range choices {
+		if !c.Disabled {
+			return true
+		}
+	}
+	return false
+}
+
+// visibleWindow returns the half-open range of choices to draw, together with
+// flags reporting whether entries are hidden above or below it.
+func visibleWindow(cur, total, maxVisible int) (start, end int, more, less bool) {
+	if maxVisible < 0 {
+		maxVisible = 0
+	}
+	start, end = entriesToDisplay(cur, total, maxVisible)
+	return start, end, start > 0, end < total
+}
+
+// overflowHint is the dim marker drawn where a scrolled list continues.
+func overflowHint(arrow string) string { return styleDim.Sprint("  "+arrow) + "\r\n" }
+
 // Select presents a single-choice list navigated with the arrow keys. It
 // returns the selected index and choice.
 func Select(cfg SelectConfig) (int, Choice, error) {
 	in, out := resolveIO(cfg.In, cfg.Out)
 	if len(cfg.Choices) == 0 {
 		return -1, Choice{}, fmt.Errorf("prompts: Select requires at least one choice")
+	}
+	// A list in which everything is disabled has no valid answer. Without this
+	// check the cursor sat on a disabled entry and Enter "selected" it, so the
+	// caller got back a choice it had explicitly marked unselectable.
+	if !hasSelectable(cfg.Choices) {
+		return -1, Choice{}, fmt.Errorf("prompts: Select requires at least one choice that is not disabled")
 	}
 	restore := enterRaw(in)
 	defer restore()
@@ -124,7 +160,12 @@ func selectFrame(cfg SelectConfig, cur int) string {
 	var b strings.Builder
 	b.WriteString(stylePrefix.Sprint("?") + " " + styleMessage.Sprint(cfg.Message) + " " +
 		styleHelp.Sprint("(↑/↓ to move, enter to select)") + "\r\n")
-	for i, c := range cfg.Choices {
+	start, end, more, less := visibleWindow(cur, len(cfg.Choices), cfg.MaxVisible)
+	if more {
+		b.WriteString(overflowHint("↑"))
+	}
+	for i := start; i < end; i++ {
+		c := cfg.Choices[i]
 		pointer := "  "
 		label := c.Name
 		switch {
@@ -136,6 +177,9 @@ func selectFrame(cfg SelectConfig, cur int) string {
 		}
 		b.WriteString(pointer + label + "\r\n")
 	}
+	if less {
+		b.WriteString(overflowHint("↓"))
+	}
 	return b.String()
 }
 
@@ -146,13 +190,19 @@ func MultiSelect(cfg MultiSelectConfig) ([]int, []Choice, error) {
 	if len(cfg.Choices) == 0 {
 		return nil, nil, fmt.Errorf("prompts: MultiSelect requires at least one choice")
 	}
+	if !hasSelectable(cfg.Choices) {
+		return nil, nil, fmt.Errorf("prompts: MultiSelect requires at least one choice that is not disabled")
+	}
 	restore := enterRaw(in)
 	defer restore()
 	kr := newKeyReader(in)
 
 	checked := make([]bool, len(cfg.Choices))
 	for i, c := range cfg.Choices {
-		checked[i] = c.Checked
+		// A disabled choice cannot be toggled on, so it must not start on
+		// either: Checked plus Disabled otherwise returned a selection the user
+		// had no way to remove.
+		checked[i] = c.Checked && !c.Disabled
 	}
 	cur := firstSelectable(cfg.Choices, 0)
 	lines := renderFrame(out, 0, multiFrame(cfg, cur, checked))
@@ -195,7 +245,12 @@ func multiFrame(cfg MultiSelectConfig, cur int, checked []bool) string {
 	var b strings.Builder
 	b.WriteString(stylePrefix.Sprint("?") + " " + styleMessage.Sprint(cfg.Message) + " " +
 		styleHelp.Sprint("(↑/↓ to move, space to toggle, enter to confirm)") + "\r\n")
-	for i, c := range cfg.Choices {
+	start, end, more, less := visibleWindow(cur, len(cfg.Choices), cfg.MaxVisible)
+	if more {
+		b.WriteString(overflowHint("↑"))
+	}
+	for i := start; i < end; i++ {
+		c := cfg.Choices[i]
 		pointer := "  "
 		if i == cur && !c.Disabled {
 			pointer = stylePointer.Sprint("❯ ")
@@ -212,6 +267,9 @@ func multiFrame(cfg MultiSelectConfig, cur int, checked []bool) string {
 			label = styleSelected.Sprint(label)
 		}
 		b.WriteString(pointer + box + label + "\r\n")
+	}
+	if less {
+		b.WriteString(overflowHint("↓"))
 	}
 	return b.String()
 }

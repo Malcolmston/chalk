@@ -52,7 +52,10 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Layout selects how adjacent characters are combined horizontally.
@@ -150,23 +153,44 @@ func ParseFont(r io.Reader) (*Font, error) {
 	return f, sc.Err()
 }
 
+// MaxFontHeight is the largest character height ParseFont accepts. Real FIGfonts
+// are at most a few dozen rows tall; the limit exists because the height is read
+// from the font file and then used to size allocations, so an absurd declared
+// height in a hostile or corrupt file would otherwise try to allocate gigabytes
+// before the parser ever discovered the file was short.
+const MaxFontHeight = 1000
+
 func parseHeader(header string) (*Font, int, error) {
 	if !strings.HasPrefix(header, "flf2a") {
 		return nil, 0, fmt.Errorf("figlet: not a FIGfont (bad signature)")
 	}
 	rest := header[len("flf2a"):]
 	if rest == "" {
-		return nil, 0, fmt.Errorf("figlet: malformed header")
+		return nil, 0, fmt.Errorf("figlet: malformed header: missing hardblank")
 	}
-	hardblank := rune(rest[0])
-	fields := strings.Fields(rest[1:])
+	// The hardblank is the single character following the signature. Decoding it
+	// as a rune (rather than taking one byte) keeps fonts that use a non-ASCII
+	// hardblank working: taking rest[0] split a multi-byte character in half and
+	// left its tail in the numeric-field list.
+	hardblank, hbSize := utf8.DecodeRuneInString(rest)
+	if hardblank == utf8.RuneError && hbSize <= 1 {
+		return nil, 0, fmt.Errorf("figlet: malformed header: invalid hardblank")
+	}
+	fields := strings.Fields(rest[hbSize:])
 	if len(fields) < 5 {
-		return nil, 0, fmt.Errorf("figlet: incomplete header")
+		return nil, 0, fmt.Errorf("figlet: incomplete header: got %d numeric fields, want at least 5", len(fields))
 	}
 	f := &Font{hardblank: hardblank}
 	nums := make([]int, len(fields))
 	for i, s := range fields {
-		fmt.Sscanf(s, "%d", &nums[i])
+		// Strict parsing: fmt.Sscanf("%d") accepts trailing garbage ("12abc"
+		// scans as 12) and, with its error ignored, silently produced 0 for a
+		// non-numeric field. strconv.Atoi rejects both.
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return nil, 0, fmt.Errorf("figlet: malformed header field %d: %q is not a number", i+1, s)
+		}
+		nums[i] = n
 	}
 	f.height = nums[0]
 	f.baseline = nums[1]
@@ -179,36 +203,67 @@ func parseHeader(header string) (*Font, int, error) {
 		f.hasFull = true
 	}
 	if f.height <= 0 {
-		return nil, 0, fmt.Errorf("figlet: invalid height")
+		return nil, 0, fmt.Errorf("figlet: invalid height %d: must be positive", f.height)
+	}
+	if f.height > MaxFontHeight {
+		return nil, 0, fmt.Errorf("figlet: font height %d exceeds the maximum of %d", f.height, MaxFontHeight)
+	}
+	if commentLines < 0 {
+		return nil, 0, fmt.Errorf("figlet: invalid comment line count %d", commentLines)
 	}
 	return f, commentLines, nil
 }
 
+// parseCharCode reads the character code that introduces a code-tagged glyph.
+// The .flf format writes it in C notation: decimal, hexadecimal with a 0x
+// prefix, or octal with a leading 0, optionally negated.
+//
+// The parse is strict. fmt.Sscanf stops at the first character it cannot use, so
+// "0x41zzz" and "12abc" were previously accepted as 0x41 and 12; a garbage line
+// in the middle of a font was therefore mistaken for a code tag and the rows
+// after it were consumed as a glyph. strconv.ParseInt with an explicit base
+// rejects any trailing text. The result is also range-checked, because
+// converting an arbitrary integer to a rune yields a meaningless or invalid code
+// point (and the value comes straight out of the font file).
 func parseCharCode(line string) (rune, error) {
-	// A code tag begins with the code (decimal, hex 0x, or octal 0) then a space.
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
-		return 0, fmt.Errorf("empty")
+		return 0, fmt.Errorf("figlet: empty code tag")
 	}
-	var code int
 	tok := fields[0]
+
+	neg := false
+	digits := tok
+	if s, ok := strings.CutPrefix(digits, "-"); ok {
+		neg, digits = true, s
+	} else if s, ok := strings.CutPrefix(digits, "+"); ok {
+		digits = s
+	}
+	if digits == "" {
+		return 0, fmt.Errorf("figlet: %q is not a character code", tok)
+	}
+
+	base := 10
 	switch {
-	case strings.HasPrefix(tok, "0x") || strings.HasPrefix(tok, "0X"):
-		if _, err := fmt.Sscanf(tok, "0x%x", &code); err != nil {
-			return 0, err
-		}
-	case strings.HasPrefix(tok, "-0x"):
-		if _, err := fmt.Sscanf(tok, "-0x%x", &code); err != nil {
-			return 0, err
-		}
+	case strings.HasPrefix(digits, "0x"), strings.HasPrefix(digits, "0X"):
+		base, digits = 16, digits[2:]
+	case len(digits) > 1 && digits[0] == '0':
+		base, digits = 8, digits[1:]
+	}
+	code, err := strconv.ParseInt(digits, base, 32)
+	if err != nil {
+		return 0, fmt.Errorf("figlet: %q is not a character code", tok)
+	}
+	if neg {
 		code = -code
-	default:
-		if _, err := fmt.Sscanf(tok, "%d", &code); err != nil {
-			return 0, err
-		}
-		if tok != fmt.Sprintf("%d", code) {
-			return 0, fmt.Errorf("not a code tag")
-		}
+	}
+	// Negative codes are legal in the FIGfont spec (they tag glyphs that are not
+	// reachable as ordinary characters), so they are kept as-is; they simply
+	// never match a rune during rendering. Codes above the Unicode maximum are
+	// rejected because rune() would turn them into a different, valid-looking
+	// code point.
+	if code > unicode.MaxRune {
+		return 0, fmt.Errorf("figlet: character code %d out of range", code)
 	}
 	return rune(code), nil
 }

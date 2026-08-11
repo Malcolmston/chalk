@@ -48,3 +48,23 @@ func ExampleRenderFont() {
 	fmt.Println(strings.Count(banner, "\n") + 1)
 	// Output: 5
 }
+
+// ExampleFont_Render demonstrates Options.Width, which wraps a banner at word
+// boundaries so it fits a given number of columns. The phrase below renders 60
+// columns wide as a single block, but with Width set to 30 the words are laid
+// out as two stacked blocks of the font's height, breaking between words and
+// never in the middle of one. A word too wide for the limit is still emitted
+// whole on its own line rather than being split or dropped. The takeaway is that
+// Width lets a banner adapt to a narrow terminal without the caller having to
+// pre-chop the text.
+func ExampleFont_Render() {
+	f := figlet.BuiltinFont()
+	narrow := f.Render("go chalk", figlet.Options{Width: 30})
+	fmt.Println(len(strings.Split(narrow, "\n")) / f.Height())
+
+	wide := f.Render("go chalk")
+	fmt.Println(len(strings.Split(wide, "\n")) / f.Height())
+	// Output:
+	// 2
+	// 1
+}

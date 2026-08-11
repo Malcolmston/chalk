@@ -45,3 +45,36 @@ func ExampleGreen() {
 	// "\x1b[32mok\x1b[39m"
 	// "ok"
 }
+
+// ExampleStyle_Level shows that a Style resolves its color codes when it
+// renders, not when it is built. The style below is created while color output
+// is off — at that moment chalk would have emitted nothing at all — and is then
+// rendered twice, once pinned to truecolor and once to the 256-color palette.
+// The same value produces a 24-bit "38;2;r;g;b" sequence in the first case and
+// the nearest palette index in the second, which is what makes it safe to store
+// configured styles in package-level variables and decide the terminal's
+// capability later. Style.Level pins one style without touching the global
+// setting, so the two renders do not interfere.
+func ExampleStyle_Level() {
+	chalk.SetLevel(chalk.LevelNone)
+	defer chalk.ResetDetection()
+
+	warn := chalk.New().Hex("#ff8800")
+	fmt.Printf("%q\n", warn.Level(chalk.LevelTrueColor).Sprint("hot"))
+	fmt.Printf("%q\n", warn.Level(chalk.Level256).Sprint("hot"))
+	// Output:
+	// "\x1b[38;2;255;136;0mhot\x1b[39m"
+	// "\x1b[38;5;214mhot\x1b[39m"
+}
+
+// ExampleStrip shows that Strip removes whole ANSI escape sequences, not just
+// the color codes chalk itself writes. The input below mixes an SGR color pair
+// with a cursor-movement sequence and an OSC hyperlink of the kind terminals use
+// to make text clickable; all three vanish and only the characters a user would
+// see remain. This is the function to reach for before measuring, logging or
+// comparing styled output.
+func ExampleStrip() {
+	styled := "\x1b[31mred\x1b[39m \x1b[2Cshifted \x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\"
+	fmt.Printf("%q\n", chalk.Strip(styled))
+	// Output: "red shifted link"
+}

@@ -1,7 +1,5 @@
 package chalk
 
-import "regexp"
-
 // Package-level shortcuts for one-off styling, e.g. chalk.Red("error").
 
 // Bold styles text bold.
@@ -57,12 +55,3 @@ func Hex(hex string, a ...any) string { return New().Hex(hex).Sprint(a...) }
 
 // Ansi256 colors text with a 256-palette index.
 func Ansi256(n int, a ...any) string { return New().Ansi256(n).Sprint(a...) }
-
-var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-// Strip removes all ANSI SGR escape sequences from s.
-func Strip(s string) string { return ansiPattern.ReplaceAllString(s, "") }
-
-// VisibleLength returns the number of visible characters in s, ignoring ANSI
-// escape codes (counts runes, not bytes).
-func VisibleLength(s string) int { return len([]rune(Strip(s))) }

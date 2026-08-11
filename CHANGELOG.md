@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `VisibleWidth` and `RuneWidth`: ANSI-aware terminal-cell measurement that
+  counts CJK characters and emoji as two columns and combining marks as zero,
+  for aligning colored output (upstream's `string-width`).
+- Color detection now recognizes CI providers (`GITHUB_ACTIONS`, `GITEA_ACTIONS`,
+  Travis, CircleCI, AppVeyor, GitLab, Buildkite, Drone, codeship, Azure
+  Pipelines), `TEAMCITY_VERSION`, `TERM_PROGRAM` (iTerm, Apple Terminal),
+  `xterm-kitty`/`xterm-ghostty`/`wezterm` and Windows Terminal, following
+  `supports-color`'s order of precedence.
+- `figlet.Options.Width` is implemented: banners wrap at word boundaries.
+- `prompts.SelectConfig.MaxVisible` / `MultiSelectConfig.MaxVisible` page long
+  lists around the cursor (upstream prompts' `limit`).
+- `examples/table` demonstrating width-aware alignment and capability reporting,
+  plus `API-DEVIATIONS.md`.
+
+### Fixed
+- 256-color and truecolor styles resolved their escape codes when the style was
+  *built* rather than when it rendered, so a stored style ignored a later
+  `SetLevel` and `Style.Level` could not override a color chained before it.
+- `Strip` removed only SGR color codes; it now removes complete CSI, OSC, DCS and
+  two-character escape sequences.
+- FIGfont headers were parsed with `fmt.Sscanf` and the error discarded, so a
+  non-numeric field became 0 and trailing garbage was ignored; character codes
+  had the same problem. Both are now strict, and the declared font height is
+  bounded (`figlet.MaxFontHeight`) so it cannot be used to force a huge
+  allocation.
+- `figlet`'s full-width merge mutated the caller's rows in place, corrupting a
+  block that was still being held.
+- `prompts.Number` accepted `NaN` and infinities (every bound check against NaN
+  is false) and tested "whole number" with an `int64` conversion that is
+  undefined for large floats.
+- End of input skipped validation in the line prompts.
+- `Select`/`MultiSelect` returned a disabled choice when every choice was
+  disabled, and a `Checked` + `Disabled` choice started checked.
+- Out-of-range 256-color indices were masked to a byte (turning `-1` into white);
+  they are now clamped.
 
 ## [0.4.0] - 2026-07-19
 ### Added

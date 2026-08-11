@@ -145,26 +145,36 @@ func (s *Style) BgBrightWhite() *Style { return s.with("107", "49") }
 
 // ---- 256-color and truecolor ------------------------------------------------
 
-// Ansi256 sets the foreground to a 256-palette color (0–255), degrading to 16
-// colors on limited terminals.
+// Ansi256 sets the foreground to a 256-palette color, degrading to the nearest
+// of the 16 basic colors on terminals that do not support the palette. The index
+// is clamped to 0–255. The downgrade is decided when the style renders, not when
+// Ansi256 is called, so the same Style follows a later [SetLevel] or
+// [Style.Level].
 func (s *Style) Ansi256(n int) *Style {
-	return s.with(fg256(n, s.effectiveLevel()), "39")
+	n = clampIndex(n)
+	return s.withDyn(func(l Level) string { return fg256(n, l) }, "39")
 }
 
-// BgAnsi256 sets the background to a 256-palette color (0–255).
+// BgAnsi256 sets the background to a 256-palette color (index clamped to 0–255),
+// degrading to the nearest basic color on limited terminals.
 func (s *Style) BgAnsi256(n int) *Style {
-	return s.with(bg256(n, s.effectiveLevel()), "49")
+	n = clampIndex(n)
+	return s.withDyn(func(l Level) string { return bg256(n, l) }, "49")
 }
 
-// RGB sets the foreground to a 24-bit color, degrading to 256/16 colors as
-// needed.
+// RGB sets the foreground to a 24-bit color, degrading to 256 or 16 colors as
+// needed. Channels are clamped to 0–255 and, as with [Style.Ansi256], the
+// downgrade happens at render time.
 func (s *Style) RGB(r, g, b int) *Style {
-	return s.with(fgRGB(r, g, b, s.effectiveLevel()), "39")
+	r, g, b = clamp(r), clamp(g), clamp(b)
+	return s.withDyn(func(l Level) string { return fgRGB(r, g, b, l) }, "39")
 }
 
-// BgRGB sets the background to a 24-bit color.
+// BgRGB sets the background to a 24-bit color, degrading to 256 or 16 colors as
+// needed. Channels are clamped to 0–255.
 func (s *Style) BgRGB(r, g, b int) *Style {
-	return s.with(bgRGB(r, g, b, s.effectiveLevel()), "49")
+	r, g, b = clamp(r), clamp(g), clamp(b)
+	return s.withDyn(func(l Level) string { return bgRGB(r, g, b, l) }, "49")
 }
 
 // Hex sets the foreground from a hex color like "#ff8800" or "f80".
@@ -205,7 +215,7 @@ func bgRGB(r, g, b int, level Level) string {
 
 func fg256(n int, level Level) string {
 	if level >= Level256 {
-		return "38;5;" + itoa(n&0xff)
+		return "38;5;" + itoa(clampIndex(n))
 	}
 	r, g, b := ansi256ToRGB(n)
 	return itoa(rgbTo16(r, g, b))
@@ -213,7 +223,7 @@ func fg256(n int, level Level) string {
 
 func bg256(n int, level Level) string {
 	if level >= Level256 {
-		return "48;5;" + itoa(n&0xff)
+		return "48;5;" + itoa(clampIndex(n))
 	}
 	r, g, b := ansi256ToRGB(n)
 	return itoa(rgbTo16(r, g, b) + 10)
@@ -254,8 +264,11 @@ func rgbTo16(r, g, b int) int {
 }
 
 // ansi256ToRGB converts an xterm-256 index back to an approximate RGB triple.
+// Out-of-range indices are clamped rather than wrapped: masking with 0xff turned
+// a negative index into a bright color (-1 became 255, i.e. white), which is a
+// surprising result for what is really an input error.
 func ansi256ToRGB(n int) (int, int, int) {
-	n &= 0xff
+	n = clampIndex(n)
 	switch {
 	case n < 16:
 		// Standard 16 colors — approximate.
@@ -312,6 +325,9 @@ func parseHex(hex string) (int, int, int) {
 	}
 	return int(v>>16) & 0xff, int(v>>8) & 0xff, int(v) & 0xff
 }
+
+// clampIndex constrains a 256-color palette index to the valid 0–255 range.
+func clampIndex(n int) int { return clamp(n) }
 
 func clamp(v int) int {
 	if v < 0 {

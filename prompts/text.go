@@ -2,6 +2,7 @@ package prompts
 
 import (
 	"io"
+	"math"
 	"strconv"
 	"strings"
 
@@ -117,7 +118,18 @@ func readLine(in io.Reader, out io.Writer, prompt string, mask rune, hidden bool
 			writeString(out, "\r\n")
 			return "", ErrCanceled
 		case keyEOF:
-			return string(buf), nil
+			// End of input behaves like pressing Enter on the current buffer,
+			// which includes running the validator: a scripted or piped answer
+			// must not be able to skip validation just by ending without a
+			// newline. There is no input left to re-prompt with, so a rejected
+			// value becomes the error.
+			line := string(buf)
+			if validate != nil {
+				if err := validate(line); err != nil {
+					return "", err
+				}
+			}
+			return line, nil
 		case keyRune, keySpace:
 			buf = append(buf, k.r)
 			switch {
@@ -197,7 +209,17 @@ func Number(cfg NumberConfig) (float64, error) {
 		if err != nil {
 			return errNotANumber
 		}
-		if cfg.Integer && v != float64(int64(v)) {
+		// ParseFloat happily accepts "NaN", "Inf" and "-Infinity". NaN then
+		// slips through every bound check, because all comparisons against NaN
+		// are false, and the prompt returns a value no caller can use.
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return errNotANumber
+		}
+		// math.Trunc, not int64(v): converting a float outside the int64 range
+		// (1e300, say) is undefined in Go and produced a garbage comparison, so
+		// huge values were silently accepted as "whole numbers" — which, for a
+		// float that large, they technically are, but only by accident.
+		if cfg.Integer && math.Trunc(v) != v {
 			return errNotAnInteger
 		}
 		if cfg.Min != nil && v < *cfg.Min {

@@ -96,9 +96,51 @@ func TestAnsi256Codes(t *testing.T) {
 	if got := New().BgAnsi256(5).Sprint("x"); got != seq("48;5;5")+"x"+seq("49") {
 		t.Errorf("BgAnsi256(5) = %q", got)
 	}
-	// The palette index is masked to a byte.
-	if got := New().Ansi256(256 + 7).Sprint("x"); got != seq("38;5;7")+"x"+seq("39") {
-		t.Errorf("Ansi256 mask = %q", got)
+	// Out-of-range palette indices are clamped to 0-255, not wrapped: wrapping
+	// turned -1 into 255 (white), which hides the caller's mistake behind a
+	// plausible-looking color.
+	if got := New().Ansi256(256 + 7).Sprint("x"); got != seq("38;5;255")+"x"+seq("39") {
+		t.Errorf("Ansi256(263) = %q, want clamped to 255", got)
+	}
+	if got := New().Ansi256(-1).Sprint("x"); got != seq("38;5;0")+"x"+seq("39") {
+		t.Errorf("Ansi256(-1) = %q, want clamped to 0", got)
+	}
+	if got := New().BgAnsi256(-5).Sprint("x"); got != seq("48;5;0")+"x"+seq("49") {
+		t.Errorf("BgAnsi256(-5) = %q, want clamped to 0", got)
+	}
+}
+
+// TestColorLevelResolvedAtRenderTime pins the fix for a real bug: Ansi256/RGB
+// and friends used to bake the downgraded escape code in at the moment the
+// method was called, using whatever the global level happened to be then. A
+// Style stored in a variable therefore ignored a later SetLevel, and .Level()
+// could not override a color chained before it — both wrong, since in Node chalk
+// the level is consulted when the string is built.
+func TestColorLevelResolvedAtRenderTime(t *testing.T) {
+	SetLevel(LevelNone)
+	defer SetLevel(LevelNone)
+
+	// Built while color is off, rendered after truecolor is enabled.
+	s := New().RGB(255, 136, 0)
+	SetLevel(LevelTrueColor)
+	if got := s.Sprint("x"); got != seq("38;2;255;136;0")+"x"+seq("39") {
+		t.Errorf("RGB after SetLevel = %q, want truecolor codes", got)
+	}
+	// The same style must now downgrade to the 6x6x6 cube index for #ff8800:
+	// 16 + 36*round(255/255*5) + 6*round(136/255*5) + round(0/255*5)
+	//   = 16 + 36*5 + 6*round(2.667) + 0 = 16 + 180 + 18 = 214.
+	SetLevel(Level256)
+	if got := s.Sprint("x"); got != seq("38;5;214")+"x"+seq("39") {
+		t.Errorf("RGB at Level256 = %q, want 38;5;214", got)
+	}
+	SetLevel(LevelNone)
+
+	// .Level() chained after the color must still win.
+	if got := New().Hex("#ff8800").Level(LevelTrueColor).Sprint("x"); got != seq("38;2;255;136;0")+"x"+seq("39") {
+		t.Errorf("Hex().Level(TrueColor) = %q, want truecolor codes", got)
+	}
+	if got := New().Ansi256(200).Level(Level256).Sprint("x"); got != seq("38;5;200")+"x"+seq("39") {
+		t.Errorf("Ansi256().Level(256) = %q", got)
 	}
 }
 
@@ -353,10 +395,22 @@ func TestResetDetection(t *testing.T) {
 
 // --- detectLevel / isTerminal ------------------------------------------------
 
-// clearColorEnv unsets every color-relevant env var for the duration of the test.
+// colorEnvVars is every environment variable detectLevel consults. Tests must
+// clear all of them, not just the one under test: detection is a process-global
+// read, so an ambient CI= or TERM_PROGRAM= on the developer's machine would
+// otherwise change the answer.
+var colorEnvVars = []string{
+	"NO_COLOR", "FORCE_COLOR", "COLORTERM", "TERM", "TERM_PROGRAM",
+	"TERM_PROGRAM_VERSION", "WT_SESSION", "TEAMCITY_VERSION",
+	"CI", "CI_NAME", "GITHUB_ACTIONS", "GITEA_ACTIONS", "TRAVIS", "CIRCLECI",
+	"APPVEYOR", "GITLAB_CI", "BUILDKITE", "DRONE", "TF_BUILD", "AGENT_NAME",
+}
+
+// clearColorEnv unsets every color-relevant env var for the duration of the test
+// and restores the previous values afterwards.
 func clearColorEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"NO_COLOR", "FORCE_COLOR", "COLORTERM", "TERM"} {
+	for _, k := range colorEnvVars {
 		if v, ok := os.LookupEnv(k); ok {
 			os.Unsetenv(k)
 			t.Cleanup(func(kk, vv string) func() {

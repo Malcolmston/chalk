@@ -1,7 +1,7 @@
 // Package prompts provides interactive terminal prompts in the spirit of Node's
 // inquirer / @inquirer/prompts, styled with the sibling chalk package. It offers
 // text input, password, confirm, number, single-select, and multi-select
-// prompts.
+// prompts, plus a paged [Slides] viewer.
 //
 //	name, _ := prompts.Input(prompts.InputConfig{Message: "Your name?"})
 //	ok, _ := prompts.Confirm(prompts.ConfirmConfig{Message: "Continue?", Default: true})
@@ -13,7 +13,8 @@
 // Use this package to ask a user questions from a command-line program: collect
 // a value ([Input]), read a secret without echoing it ([Password]), confirm a
 // yes/no decision ([Confirm]), read a bounded number ([Number]), or let the user
-// pick from a list with the arrow keys ([Select] and [MultiSelect]). Each prompt
+// pick from a list with the arrow keys ([Select] and [MultiSelect]), or page
+// through a sequence of styled text pages with [Slides]. Each prompt
 // is driven by a small config struct — [InputConfig], [ConfirmConfig] and the
 // rest — that carries the message, defaults, validation and the input/output
 // streams, so the API stays flat and there is no shared prompt object to

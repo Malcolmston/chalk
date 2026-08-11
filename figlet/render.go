@@ -6,6 +6,11 @@ import (
 )
 
 // Render renders text using the font.
+//
+// Each line of text becomes its own block of [Font.Height] rows, and the blocks
+// are stacked. When Options.Width is positive the text is additionally wrapped
+// at word boundaries so no block is wider than that many columns; a single word
+// too wide to fit is emitted on a line of its own rather than being broken.
 func (f *Font) Render(text string, opts ...Options) string {
 	o := Options{}
 	if len(opts) > 0 {
@@ -16,34 +21,103 @@ func (f *Font) Render(text string, opts ...Options) string {
 	// Render each line of input separately.
 	var blocks []string
 	for _, line := range strings.Split(text, "\n") {
-		blocks = append(blocks, f.renderLine(line, layout, rules))
+		if o.Width > 0 {
+			blocks = append(blocks, f.wrapLine(line, layout, rules, o.Width)...)
+		} else {
+			blocks = append(blocks, f.renderLine(line, layout, rules))
+		}
 	}
 	return strings.Join(blocks, "\n")
 }
 
 // renderLine renders a single (newline-free) line.
 func (f *Font) renderLine(text string, layout Layout, rules int) string {
-	out := make([]string, f.height)
-	first := true
+	return f.finish(f.appendRunes(nil, text, layout, rules))
+}
+
+// appendRunes lays the glyphs for text onto rows, which may be nil to start a
+// new block, and returns the new rows. Hardblanks are still present in the
+// result; call finish to produce displayable text.
+func (f *Font) appendRunes(rows []string, text string, layout Layout, rules int) []string {
 	for _, ch := range text {
 		glyph := f.glyphFor(ch)
 		if glyph == nil {
 			continue
 		}
 		glyph = padGlyph(glyph)
-		if first {
-			copy(out, glyph)
-			first = false
+		if rows == nil {
+			rows = make([]string, f.height)
+			copy(rows, glyph)
 			continue
 		}
-		out = f.merge(out, glyph, layout, rules)
+		rows = f.merge(rows, glyph, layout, rules)
 	}
-	// Replace hardblanks with spaces for display.
+	return rows
+}
+
+// finish turns a block of rows into displayable text, replacing hardblanks with
+// spaces. A nil block renders as an empty block of the font's height.
+func (f *Font) finish(rows []string) string {
+	if rows == nil {
+		rows = make([]string, f.height)
+	}
 	hb := string(f.hardblank)
-	for i := range out {
-		out[i] = strings.ReplaceAll(out[i], hb, " ")
+	out := make([]string, len(rows))
+	for i, row := range rows {
+		out[i] = strings.ReplaceAll(row, hb, " ")
 	}
 	return strings.Join(out, "\n")
+}
+
+// blockWidth returns the number of columns a block occupies, ignoring the
+// trailing blanks that padding leaves on each row.
+func blockWidth(rows []string) int {
+	w := 0
+	for _, row := range rows {
+		if n := len([]rune(strings.TrimRight(row, " "))); n > w {
+			w = n
+		}
+	}
+	return w
+}
+
+// wrapLine renders one input line as one or more blocks, none wider than width
+// columns, breaking between words.
+//
+// Words are merged into the current block one at a time and the block is
+// measured as it grows, so each word is laid out at most twice however long the
+// input is — deliberately not "re-render the whole candidate line for every
+// word", which is quadratic in the number of words and is exactly the kind of
+// loop a caller-supplied width could blow up.
+func (f *Font) wrapLine(text string, layout Layout, rules, width int) []string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{f.renderLine(text, layout, rules)}
+	}
+
+	var blocks []string
+	var cur []string
+	inLine := 0
+	for _, w := range words {
+		next := f.appendWord(cur, w, layout, rules)
+		if inLine > 0 && blockWidth(next) > width {
+			blocks = append(blocks, f.finish(cur))
+			cur, inLine = f.appendWord(nil, w, layout, rules), 0
+		} else {
+			cur = next
+		}
+		inLine++
+	}
+	return append(blocks, f.finish(cur))
+}
+
+// appendWord adds word to a block, separated by a space when the block is not
+// empty.
+func (f *Font) appendWord(rows []string, word string, layout Layout, rules int) []string {
+	if rows != nil {
+		rows = f.appendRunes(rows, " ", layout, rules)
+	}
+	return f.appendRunes(rows, word, layout, rules)
 }
 
 // glyphFor returns the glyph for ch, falling back to uppercase (for fonts that
@@ -98,10 +172,15 @@ func (f *Font) resolveLayout(requested Layout) (Layout, int) {
 // merge appends glyph to out using the layout, returning the new rows.
 func (f *Font) merge(out, glyph []string, layout Layout, rules int) []string {
 	if layout == LayoutFull {
+		// Build a new slice rather than writing back into out: callers keep
+		// earlier blocks around (see wrapLine, which holds the last block that
+		// fitted while it tries the next word), and mutating in place corrupted
+		// them.
+		res := make([]string, len(out))
 		for i := range out {
-			out[i] += glyph[i]
+			res[i] = out[i] + glyph[i]
 		}
-		return out
+		return res
 	}
 
 	smush := layout == LayoutSmush

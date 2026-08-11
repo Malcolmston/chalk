@@ -54,3 +54,56 @@ func ExampleConfirm() {
 	fmt.Println(ok)
 	// Output: true
 }
+
+// ExampleSelect demonstrates a scripted single-choice list, including the
+// MaxVisible option that pages a long list. The scripted input sends two
+// "cursor down" escape sequences and then Enter, so the selection lands on the
+// third choice; MaxVisible limits the drawn list to three entries at a time and
+// scrolls it around the cursor, which is the behavior of upstream prompts'
+// "limit" option. Choices marked Disabled are skipped by the arrow keys, and a
+// list in which every choice is disabled is rejected with an error rather than
+// returning an unselectable answer. As with the other prompts, In and Out make
+// the whole interaction testable without a terminal.
+func ExampleSelect() {
+	idx, choice, err := prompts.Select(prompts.SelectConfig{
+		Message:    "Pick a color",
+		MaxVisible: 3,
+		Choices: []prompts.Choice{
+			{Name: "Red"},
+			{Name: "Green", Disabled: true},
+			{Name: "Blue"},
+			{Name: "Violet"},
+		},
+		In:  strings.NewReader("\x1b[B\x1b[B\r"),
+		Out: &bytes.Buffer{},
+	})
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	fmt.Printf("%d %s\n", idx, choice.Name)
+	// Output: 3 Violet
+}
+
+// ExampleSlides demonstrates the paged slide viewer driven non-interactively.
+// The scripted input sends two "cursor right" escape sequences to advance from
+// the first page to the third, then "q" to quit. Slides returns the index of the
+// page that was on screen when the viewer closed. As with the other prompts, In
+// and Out make the whole interaction testable without a terminal; a piped or
+// redirected stdin that simply ends is treated as a quit, so the viewer never
+// hangs. The takeaway is that Slides is an in-place, arrow-navigable reader for a
+// sequence of styled text pages that degrades gracefully outside a TTY.
+func ExampleSlides() {
+	page, err := prompts.Slides(prompts.SlidesConfig{
+		Title: "Intro",
+		Pages: []string{"Welcome", "Chapter 1", "The End"},
+		In:    strings.NewReader("\x1b[C\x1b[Cq"),
+		Out:   &bytes.Buffer{},
+	})
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	fmt.Printf("closed on page %d\n", page)
+	// Output: closed on page 2
+}

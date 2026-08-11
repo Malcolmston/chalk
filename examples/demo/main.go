@@ -21,4 +21,14 @@ func main() {
 		Choices: []prompts.Choice{{Name: "Red"}, {Name: "Green"}, {Name: "Blue"}},
 	})
 	fmt.Printf("You picked #%d: %s\n", i, chalk.Bold(choice.Name))
+
+	prompts.Slides(prompts.SlidesConfig{
+		Title: "A quick tour",
+		Loop:  true,
+		Pages: []string{
+			chalk.Bold("Welcome to go-chalk") + "\nStyled terminal output for Go.",
+			"Prompts:\n" + chalk.Cyan("Input, Confirm, Select, MultiSelect, Slides"),
+			chalk.Green("That's it — happy hacking!"),
+		},
+	})
 }

@@ -4,7 +4,8 @@
   "parityBefore": "83%",
   "parityAfter": "100%",
   "upstreamCasesSynced": 30,
-  "gapsFound": 5,
-  "gapsClosed": 5,
-  "asOf": "2026-07-18"
+  "gapsFound": 7,
+  "gapsClosed": 7,
+  "asOf": "2026-08-05",
+  "notes": "2026-08-05: closed two further supports-color gaps (CI / TEAMCITY_VERSION / TERM_PROGRAM / kitty-ghostty-wezterm detection, and FORCE_COLOR as a numeric floor clamped to 0-3 rather than a cap) and implemented figlet's documented Options.Width. Remaining intentional differences are listed in API-DEVIATIONS.md."
 }
