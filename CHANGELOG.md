@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.5.0] - 2026-08-11
+### Added
+- **Interactive console input** (`chalk/prompts`): a paged `Slides` viewer with
+  arrow/space/`q` navigation, optional looping and a clamped start page,
+  alongside the existing `Input`, `Password`, `Confirm`, `Number`, `Select` and
+  `MultiSelect`. Non-TTY input degrades cleanly and never hangs.
+
+### Changed
+- `chalk/figlet` is now a line-for-line port of figlet.js: vertical layout and
+  its five smushing rules, upstream width wrapping, `ShowHardBlanks`,
+  `PrintDirection`, controlled/universal smushing, the incremental
+  horizontal-overlap scan, positional hierarchy rules, the seven mandated
+  post-ASCII glyphs and the correct end-mark rule. Measured parity against
+  `figlet@1.11.4` rose from 50.8% to 100% of compared cases.
+- `chalk/prompts` measured against `prompts@2.4.2` rose from 74.7% to 100%: a
+  line prompt now substitutes its default before validating (a prompt with a
+  default plus a validator was previously unanswerable by Enter), and
+  `Choice.ResolvedValue` implements the documented value-defaults-to-name rule.
 ### Added
 - `VisibleWidth` and `RuneWidth`: ANSI-aware terminal-cell measurement that
   counts CJK characters and emoji as two columns and combining marks as zero,
