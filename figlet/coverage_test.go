@@ -33,42 +33,48 @@ func TestParseFontErrors(t *testing.T) {
 // TestParseFontFullLayout exercises the >=7 field header branch that sets the
 // fullLayout / hasFull fields.
 func TestParseFontFullLayout(t *testing.T) {
-	// Smush bit (128) set plus rule bits -> LayoutSmush under default.
-	font := "flf2a$ 1 1 5 0 1 0 191 0\ncomment\n$@\n|@\n"
-	f, err := ParseFont(strings.NewReader(font))
+	// Smush bit (128) set plus rule bits -> controlled smushing under default.
+	f, err := ParseFont(strings.NewReader(buildFontWith("flf2a$ 1 1 5 0 1 0 191 0", 1, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !f.hasFull {
 		t.Fatal("hasFull not set for 8-field header")
 	}
-	if layout, rules := f.resolveLayout(LayoutDefault); layout != LayoutSmush {
-		t.Fatalf("layout = %v, want smush; rules=%d", layout, rules)
+	if r := f.FittingRules(); r.HorizontalLayout != layoutControlledSmushing {
+		t.Fatalf("horizontal layout = %d, want controlled smushing; rules = %+v", r.HorizontalLayout, r)
 	}
 }
 
-// TestParseFontCodeTags builds a complete 95-glyph font followed by a
-// code-tagged glyph so the optional code-tag parsing loop runs.
+// TestParseFontCodeTags appends a code-tagged glyph to a complete font so the
+// optional code-tag parsing loop runs.
 func TestParseFontCodeTags(t *testing.T) {
-	var b strings.Builder
-	b.WriteString("flf2a$ 1 1 5 0 1\n") // height 1, 1 comment line
-	b.WriteString("a comment\n")
-	for c := 32; c <= 126; c++ { // required glyphs 32..126
-		b.WriteString("X@\n")
-	}
-	b.WriteString("\n")      // blank line -> exercises the continue branch
-	b.WriteString("0xC4\n")  // code tag (196) in hex
-	b.WriteString("Y@\n")    // its glyph
-	b.WriteString("junk!\n") // not a code tag -> loop breaks
+	base := buildFontWith("flf2a$ 1 1 5 0 1", 1, nil)
 
-	f, err := ParseFont(strings.NewReader(b.String()))
+	f, err := ParseFont(strings.NewReader(base + "0x2603 SNOWMAN\n\u2603@@\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g, ok := f.chars[rune(0xC4)]; !ok {
-		t.Fatalf("code-tagged glyph 0xC4 not parsed")
-	} else if g[0] != "Y" {
-		t.Fatalf("code-tagged glyph = %q, want \"Y\"", g[0])
+	if g, ok := f.chars['\u2603']; !ok {
+		t.Fatal("code-tagged glyph 0x2603 not parsed")
+	} else if g[0] != "\u2603" {
+		t.Fatalf("code-tagged glyph = %q, want a snowman", g[0])
+	}
+
+	// A blank line ends the glyph table; anything after it is ignored.
+	f, err = ParseFont(strings.NewReader(base + "\n0x2603 SNOWMAN\n\u2603@@\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.chars['\u2603']; ok {
+		t.Error("a glyph after the terminating blank line should not be read")
+	}
+
+	// A line that is neither blank nor a code tag is a parse error, not a
+	// silent stop: treating it as the end of the font quietly discarded every
+	// glyph after it.
+	if _, err := ParseFont(strings.NewReader(base + "junk!\nX@@\n")); err == nil {
+		t.Error("a non-numeric code tag should be an error")
 	}
 }
 
@@ -81,7 +87,7 @@ func TestParseCharCode(t *testing.T) {
 	}{
 		{"196 LATIN", 196},
 		{"0xC4 x", 196},
-		{"-0x1 neg", -1},
+		{"-0x2 neg", -2},
 		{"32", 32},
 	}
 	for _, c := range ok {
@@ -95,7 +101,8 @@ func TestParseCharCode(t *testing.T) {
 		}
 	}
 
-	bad := []string{"", "notacode", "12abc"}
+	// -1 is explicitly not a permitted character code.
+	bad := []string{"", "notacode", "12abc", "-1", "-0x1"}
 	for _, in := range bad {
 		if _, err := parseCharCode(in); err == nil {
 			t.Errorf("parseCharCode(%q): expected error", in)
@@ -103,99 +110,149 @@ func TestParseCharCode(t *testing.T) {
 	}
 }
 
-// --- stripEndmark ------------------------------------------------------------
+// --- removeEndChar -----------------------------------------------------------
 
-func TestStripEndmark(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"", ""},
-		{"X@", "X"},
-		{"XX@@", "XX"}, // double end-mark
-		{"@@", ""},     // all end-mark
-		{"abc#", "abc"},
-	}
-	for _, c := range cases {
-		if got := stripEndmark(c.in); got != c.want {
-			t.Errorf("stripEndmark(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-// --- resolveLayout -----------------------------------------------------------
-
-func TestResolveLayout(t *testing.T) {
+func TestRemoveEndChar(t *testing.T) {
 	cases := []struct {
-		name       string
-		f          *Font
-		requested  Layout
-		wantLayout Layout
+		in            string
+		lineNum, hght int
+		want          string
 	}{
-		{"explicit full", &Font{oldLayout: 5}, LayoutFull, LayoutFull},
-		{"explicit smush hasFull", &Font{hasFull: true, fullLayout: 0xFF}, LayoutSmush, LayoutSmush},
-		{"explicit kerning negative rules", &Font{oldLayout: -1}, LayoutKerning, LayoutKerning},
-		{"default hasFull smush", &Font{hasFull: true, fullLayout: 128 | 1}, LayoutDefault, LayoutSmush},
-		{"default hasFull kerning", &Font{hasFull: true, fullLayout: 64}, LayoutDefault, LayoutKerning},
-		{"default hasFull full", &Font{hasFull: true, fullLayout: 0}, LayoutDefault, LayoutFull},
-		{"default old full", &Font{oldLayout: -1}, LayoutDefault, LayoutFull},
-		{"default old kerning", &Font{oldLayout: 0}, LayoutDefault, LayoutKerning},
-		{"default old smush", &Font{oldLayout: 1}, LayoutDefault, LayoutSmush},
+		{"", 0, 1, ""},
+		{"X@", 0, 1, "X"},
+		{"XX@@", 1, 2, "XX"},  // final row: one or two end marks
+		{"XX@@", 0, 2, "XX@"}, // other rows: exactly one
+		{"@@", 0, 1, ""},      // a row that is nothing but end marks
+		{"X@@@", 0, 1, "X@"},  // only the trailing pair is the mark
+		{"abc#", 0, 1, "abc"}, // the end mark is whatever the row ends with
+		{"X@   ", 0, 1, "X"},  // TOIlet fonts pad after the end mark
+		{"   ", 0, 1, "   "},  // a blank row has no end mark to remove
 	}
 	for _, c := range cases {
-		layout, _ := c.f.resolveLayout(c.requested)
-		if layout != c.wantLayout {
-			t.Errorf("%s: layout = %v, want %v", c.name, layout, c.wantLayout)
+		if got := removeEndChar(c.in, c.lineNum, c.hght); got != c.want {
+			t.Errorf("removeEndChar(%q, %d, %d) = %q, want %q", c.in, c.lineNum, c.hght, got, c.want)
 		}
 	}
 }
 
-// --- smushem rules -----------------------------------------------------------
+// --- getSmushingRules --------------------------------------------------------
 
-func TestSmushem(t *testing.T) {
-	f := &Font{hardblank: '$'}
+func TestGetSmushingRules(t *testing.T) {
+	full := func(n int) *int { return &n }
 
 	cases := []struct {
-		name  string
-		a, b  rune
-		smush bool
-		rules int
-		want  rune
+		name      string
+		old       int
+		fl        *int
+		wantH     int
+		wantV     int
+		wantHRule [6]bool
+		wantVRule [5]bool
 	}{
-		{"space-left", ' ', 'X', true, 0, 'X'},
-		{"space-right", 'X', ' ', true, 0, 'X'},
-		{"both-hardblank-rule32", '$', '$', true, 32, '$'},
-		{"hardblank-no-rule", '$', 'X', true, 1, 0},
-		{"no-smush", 'A', 'B', false, 1, 0},
-		{"universal", 'A', 'B', true, 0, 'B'},
-		{"rule1-equal", '|', '|', true, 1, '|'},
-		{"rule2-underscore-left", '_', '|', true, 2, '|'},
-		{"rule2-underscore-right", '|', '_', true, 2, '|'},
-		{"rule4-hierarchy", '|', '/', true, 4, '/'}, // '/' outranks '|'
-		{"rule4-hierarchy-rev", '/', '|', true, 4, '/'},
-		{"rule8-opposite", '[', ']', true, 8, '|'},
-		{"rule16-slash", '/', '\\', true, 16, '|'},
-		{"rule16-backslash", '\\', '/', true, 16, 'Y'},
-		{"rule16-gtlt", '>', '<', true, 16, 'X'},
-		{"no-match", 'A', 'B', true, 1, 0}, // rule1 only, unequal -> 0
+		{"old -1 is full width", -1, nil, layoutFullWidth, layoutFullWidth, [6]bool{}, [5]bool{}},
+		{"old 0 is fitting", 0, nil, layoutFitting, layoutFullWidth, [6]bool{}, [5]bool{}},
+		{"old 1 is controlled smushing", 1, nil, layoutControlledSmushing, layoutFullWidth,
+			[6]bool{true}, [5]bool{}},
+		{"old 15 enables rules 1-4", 15, nil, layoutControlledSmushing, layoutFullWidth,
+			[6]bool{true, true, true, true}, [5]bool{}},
+		{"full 64 is fitting", 0, full(64), layoutFitting, layoutFullWidth, [6]bool{}, [5]bool{}},
+		{"full 128 is universal smushing", 0, full(128), layoutSmushing, layoutFullWidth,
+			[6]bool{}, [5]bool{}},
+		{"full 129 is controlled smushing", 0, full(129), layoutControlledSmushing, layoutFullWidth,
+			[6]bool{true}, [5]bool{}},
+		// 24463 is the Standard font: vertical smushing plus every vertical rule
+		// and horizontal rules 1-4.
+		{"full 24463 (Standard)", 15, full(24463), layoutControlledSmushing, layoutControlledSmushing,
+			[6]bool{true, true, true, true}, [5]bool{true, true, true, true, true}},
 	}
 	for _, c := range cases {
-		if got := f.smushem(c.a, c.b, c.smush, c.rules); got != c.want {
-			t.Errorf("%s: smushem(%q,%q,%v,%d) = %q, want %q",
-				c.name, c.a, c.b, c.smush, c.rules, got, c.want)
+		r := getSmushingRules(c.old, c.fl)
+		if r.hLayout != c.wantH || r.vLayout != c.wantV {
+			t.Errorf("%s: layouts = h%d v%d, want h%d v%d", c.name, r.hLayout, r.vLayout, c.wantH, c.wantV)
+		}
+		if r.hRule != c.wantHRule || r.vRule != c.wantVRule {
+			t.Errorf("%s: rules = h%v v%v, want h%v v%v", c.name, r.hRule, r.vRule, c.wantHRule, c.wantVRule)
 		}
 	}
 }
 
-func TestRankAndOpposite(t *testing.T) {
-	if rank('|') != 1 || rank('/') != 2 || rank('[') != 3 || rank('{') != 4 || rank('(') != 5 || rank('<') != 6 {
-		t.Error("rank returned unexpected values")
+// --- smushing rules ----------------------------------------------------------
+
+func TestHorizontalSmushRules(t *testing.T) {
+	all := fittingRules{hLayout: layoutControlledSmushing, hRule: [6]bool{true, true, true, true, true, true}}
+	only := func(i int) fittingRules {
+		r := fittingRules{hLayout: layoutControlledSmushing}
+		r.hRule[i] = true
+		return r
 	}
-	if rank('A') != 0 {
-		t.Error("rank of non-bracket should be 0")
+
+	cases := []struct {
+		name string
+		a, b rune
+		r    fittingRules
+		want rune // 0 means "no rule applies"
+	}{
+		{"rule1 equal", '|', '|', only(0), '|'},
+		{"rule1 skips hardblanks", '$', '$', only(0), 0},
+		{"rule2 underscore left", '_', '|', only(1), '|'},
+		{"rule2 underscore right", '|', '_', only(1), '|'},
+		{"rule3 hierarchy", '|', '/', only(2), '/'},
+		{"rule3 hierarchy reversed", '/', '|', only(2), '/'},
+		{"rule3 needs a gap of two", '/', '\\', only(2), 0},
+		{"rule4 opposite pair", '[', ']', only(3), '|'},
+		{"rule4 same bracket", '[', '[', only(3), '|'},
+		{"rule4 unrelated", '[', '(', only(3), 0},
+		{"rule5 slash", '/', '\\', only(4), '|'},
+		{"rule5 backslash", '\\', '/', only(4), 'Y'},
+		{"rule5 gt lt", '>', '<', only(4), 'X'},
+		{"rule5 lt gt is not smushed", '<', '>', only(4), 0},
+		{"rule6 both hardblanks", '$', '$', only(5), '$'},
+		{"rule6 one hardblank", '$', 'X', only(5), 0},
+		{"no rule matches", 'A', 'B', all, 0},
 	}
-	if !isOppositePair('[', ']') || !isOppositePair('(', ')') || !isOppositePair('{', '}') {
-		t.Error("isOppositePair missed a real pair")
+	for _, c := range cases {
+		got, ok := hRuleSmush(c.a, c.b, '$', c.r)
+		if !ok {
+			got = 0
+		}
+		if got != c.want {
+			t.Errorf("%s: hRuleSmush(%q,%q) = %q, want %q", c.name, c.a, c.b, got, c.want)
+		}
 	}
-	if isOppositePair('[', '}') {
-		t.Error("isOppositePair matched a mismatched pair")
+}
+
+func TestUniversalSmush(t *testing.T) {
+	cases := []struct {
+		a, b, want rune
+	}{
+		{'A', ' ', 'A'}, // a space never overwrites ink
+		{' ', 'B', 'B'}, // ink overwrites a space
+		{'A', 'B', 'B'}, // otherwise the later character wins
+		{'A', '$', 'A'}, // a hardblank never overwrites ink
+		{' ', '$', '$'}, // but it does overwrite a blank
+	}
+	for _, c := range cases {
+		if got := uniSmush(c.a, c.b, '$'); got != c.want {
+			t.Errorf("uniSmush(%q,%q) = %q, want %q", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+func TestVerticalSmushRules(t *testing.T) {
+	if got, ok := vRule4Smush('-', '_'); !ok || got != '=' {
+		t.Errorf("vRule4Smush('-','_') = %q,%v, want '=',true", got, ok)
+	}
+	if got, ok := vRule4Smush('_', '-'); !ok || got != '=' {
+		t.Errorf("vRule4Smush('_','-') = %q,%v, want '=',true", got, ok)
+	}
+	if _, ok := vRule4Smush('-', '-'); ok {
+		t.Error("vRule4Smush smushes identical lines, which is rule 1's job")
+	}
+	if got, ok := vRule5Smush('|', '|'); !ok || got != '|' {
+		t.Errorf("vRule5Smush('|','|') = %q,%v, want '|',true", got, ok)
+	}
+	if _, ok := vRule1Smush('a', 'b'); ok {
+		t.Error("vRule1Smush matched unequal characters")
 	}
 }
 
@@ -203,7 +260,8 @@ func TestRankAndOpposite(t *testing.T) {
 
 func TestGlyphFor(t *testing.T) {
 	f := &Font{
-		height: 1,
+		height:   1,
+		fallback: true,
 		chars: map[rune][]string{
 			'A': {"AA"},
 			' ': {"  "},
@@ -223,16 +281,23 @@ func TestGlyphFor(t *testing.T) {
 	}
 
 	// A font with no space glyph returns nil for unknown chars.
-	noSpace := &Font{height: 1, chars: map[rune][]string{'A': {"AA"}}}
+	noSpace := &Font{height: 1, fallback: true, chars: map[rune][]string{'A': {"AA"}}}
 	if g := noSpace.glyphFor('Z'); g != nil {
 		t.Errorf("expected nil for unknown char with no space glyph, got %v", g)
 	}
-	// renderLine skips nil glyphs without panicking.
-	if out := noSpace.renderLine("ZZ", LayoutFull, 0); out != "" {
-		// no defined glyphs -> empty row
-		if strings.TrimSpace(out) != "" {
-			t.Errorf("renderLine with only-skipped glyphs = %q", out)
-		}
+	// Render skips nil glyphs without panicking, and produces no ink at all.
+	if out := noSpace.Render("ZZ"); strings.TrimSpace(out) != "" {
+		t.Errorf("Render with only-skipped glyphs = %q", out)
+	}
+
+	// A font parsed from a .flf has no fallback: an undefined character is
+	// skipped outright, exactly as the reference implementation does.
+	strict := &Font{height: 1, chars: map[rune][]string{'A': {"AA"}, ' ': {"  "}}}
+	if g := strict.glyphFor('a'); g != nil {
+		t.Error("a parsed font must not fall back to the uppercase glyph")
+	}
+	if g := strict.glyphFor('Z'); g != nil {
+		t.Error("a parsed font must not fall back to the space glyph")
 	}
 }
 
@@ -371,10 +436,9 @@ func TestHSVToRGBSpectrum(t *testing.T) {
 
 // --- layout rendering paths --------------------------------------------------
 
-// TestRenderLayouts drives kerning and full-width smushing merges through the
-// built-in font, covering merge/overlap/rowOverlap paths.
+// TestRenderLayouts drives every horizontal layout through the built-in font.
 func TestRenderLayouts(t *testing.T) {
-	for _, layout := range []Layout{LayoutFull, LayoutKerning, LayoutSmush} {
+	for _, layout := range []Layout{LayoutFull, LayoutFitted, LayoutControlledSmush, LayoutUniversalSmush} {
 		out := Render("AB", Options{Layout: layout})
 		lines := strings.Split(out, "\n")
 		if len(lines) != 5 {

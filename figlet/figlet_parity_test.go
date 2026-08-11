@@ -25,7 +25,6 @@ package figlet
 
 import (
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -104,62 +103,29 @@ func TestParityStandardHeader(t *testing.T) {
 	}
 }
 
-// normalizeBlock right-trims each row and drops fully-blank rows. This isolates
-// the horizontal-smushing content from the two features the port omits: the
-// uniform right-padding upstream applies to every output row, and the vertical
-// blank-row removal upstream performs for "fitted"/default vertical layout.
-func normalizeBlock(s string) string {
-	var out []string
-	for _, ln := range strings.Split(s, "\n") {
-		ln = strings.TrimRight(ln, " ")
-		if ln == "" {
-			continue
-		}
-		out = append(out, ln)
-	}
-	return strings.Join(out, "\n")
-}
-
-// TestParityStandardHorizontalSmush proves the port reproduces upstream's
-// Standard-font horizontal smushing exactly. Upstream node-figlet.test.ts
-// renders figlet.textSync("FIGlet\nFONTS", {font:"Standard",
-// verticalLayout:"fitted"}) into test/expected/standard. After normalizing away
-// the two omitted features (uniform right-padding and vertical blank-row
-// removal), the port's output is byte-for-byte identical to upstream's.
-func TestParityStandardHorizontalSmush(t *testing.T) {
-	f := parityFont(t, "Standard.flf")
-	got := normalizeBlock(f.Render("FIGlet\nFONTS"))
-	want := normalizeBlock(parityExpected(t, "exp_standard"))
-	if got != want {
-		t.Errorf("Standard horizontal smushing mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
-	}
-}
-
-// TestParityStandardVerticalFitted is the exact-match form of the vector above.
-// It requires vertical fitting (blank-row removal between stacked lines) plus
-// uniform right-padding, neither of which the port implements. Recorded as a
-// documented gap so `go test -run Parity` stays green; the horizontal content is
-// already verified by TestParityStandardHorizontalSmush.
+// TestParityStandardVerticalFitted is upstream's
+// figlet.textSync("FIGlet\nFONTS", {font:"Standard", verticalLayout:"fitted"})
+// -> test/expected/standard. It exercises vertical fitting (which slides the two
+// blocks together until they touch) and the uniform right-padding stacking
+// applies. Exact match expected.
 func TestParityStandardVerticalFitted(t *testing.T) {
 	f := parityFont(t, "Standard.flf")
-	got := f.Render("FIGlet\nFONTS")
+	got := f.Render("FIGlet\nFONTS", Options{VerticalLayout: LayoutFitted})
 	want := parityExpected(t, "exp_standard")
-	if got == want {
-		t.Fatal("gap unexpectedly closed: update this test to a hard assertion")
+	if got != want {
+		t.Errorf("Standard vertical fitting mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
-	t.Skip("known gap: vertical fitting + uniform right-padding not implemented (deliberately omitted)")
 }
 
 // TestParityStandardDefaultVertical is upstream's default-layout render,
 // figlet.textSync("FIGlet\nFonts", {font:"Standard"}) -> test/expected/
-// standard_default, which vertically smushes the two lines. Vertical smushing is
-// deliberately omitted; recorded as a documented gap.
+// standard_default, which vertically smushes the two lines using the font's own
+// vertical rules. Exact match expected.
 func TestParityStandardDefaultVertical(t *testing.T) {
 	f := parityFont(t, "Standard.flf")
 	got := f.Render("FIGlet\nFonts")
 	want := parityExpected(t, "exp_standard_default")
-	if got == want {
-		t.Fatal("gap unexpectedly closed: update this test to a hard assertion")
+	if got != want {
+		t.Errorf("Standard default vertical layout mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
-	t.Skip("known gap: vertical smushing not implemented (deliberately omitted)")
 }

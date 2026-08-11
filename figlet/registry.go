@@ -104,11 +104,5 @@ func variantFont(fill rune) *Font {
 		}
 		chars[r] = cp
 	}
-	return &Font{
-		hardblank: base.hardblank,
-		height:    base.height,
-		baseline:  base.baseline,
-		oldLayout: base.oldLayout,
-		chars:     chars,
-	}
+	return newBundledFont(base.hardblank, base.height, base.oldLayout, chars)
 }

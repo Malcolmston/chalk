@@ -84,13 +84,7 @@ func BuiltinFont() *Font {
 			}
 			chars[r] = padded
 		}
-		builtin = &Font{
-			hardblank: 0,
-			height:    5,
-			baseline:  5,
-			oldLayout: -1, // full width
-			chars:     chars,
-		}
+		builtin = newBundledFont(0, 5, -1 /* full width */, chars)
 	})
 	return builtin
 }

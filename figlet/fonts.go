@@ -20,11 +20,21 @@ func FontFromGlyphs(height, layout int, glyphs map[rune][]string) *Font {
 		copy(cp, rows)
 		chars[r] = cp
 	}
+	return newBundledFont('$', height, layout, chars)
+}
+
+// newBundledFont wraps a glyph map authored inside this package as a *Font. The
+// layout rules are derived from oldLayout exactly as they would be for a font
+// read from a .flf header, and the uppercase/space glyph fallback is enabled
+// because every bundled font defines capitals only.
+func newBundledFont(hardblank rune, height, oldLayout int, chars map[rune][]string) *Font {
 	return &Font{
-		hardblank: '$',
+		hardblank: hardblank,
 		height:    height,
 		baseline:  height,
-		oldLayout: layout,
+		oldLayout: oldLayout,
+		rules:     getSmushingRules(oldLayout, nil),
+		fallback:  true,
 		chars:     chars,
 	}
 }

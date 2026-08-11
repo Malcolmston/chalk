@@ -136,13 +136,7 @@ func buildGeneratedFont(filled map[rune][]string, fill rune, dec func([]string, 
 		chars[r] = out
 		height = len(out) // uniform across glyphs by construction
 	}
-	return &Font{
-		hardblank: 0,
-		height:    height,
-		baseline:  height,
-		oldLayout: -1,
-		chars:     chars,
-	}
+	return newBundledFont(0, height, -1, chars)
 }
 
 // normalizeGlyphs copies glyphs, replacing the '$' hardblank gutter with a plain

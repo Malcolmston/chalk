@@ -15,13 +15,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Pipelines), `TEAMCITY_VERSION`, `TERM_PROGRAM` (iTerm, Apple Terminal),
   `xterm-kitty`/`xterm-ghostty`/`wezterm` and Windows Terminal, following
   `supports-color`'s order of precedence.
-- `figlet.Options.Width` is implemented: banners wrap at word boundaries.
+- `figlet.Options.Width` is implemented: banners wrap to the given number of
+  columns.
 - `prompts.SelectConfig.MaxVisible` / `MultiSelectConfig.MaxVisible` page long
   lists around the cursor (upstream prompts' `limit`).
 - `examples/table` demonstrating width-aware alignment and capability reporting,
   plus `API-DEVIATIONS.md`.
+- `figlet` now implements the *whole* reference rendering engine: vertical
+  layout and the five vertical smushing rules (`Options.VerticalLayout`),
+  upstream's width wrapping including `Options.WhitespaceBreak`,
+  `Options.ShowHardBlanks`, right-to-left `Options.PrintDirection`, and the
+  `controlled smushing` / `universal smushing` layouts as `LayoutControlledSmush`
+  / `LayoutUniversalSmush` (`LayoutFitted` is the new name for `LayoutKerning`).
+- `figlet.Font.Metadata` and `figlet.Font.FittingRules` expose the FIGfont header
+  fields and the layout rules they resolve to, matching `figlet.metadata`.
+- `prompts.Choice.ResolvedValue` returns a choice's `Value`, falling back to its
+  `Name` — the fallback `Choice` already documented but nothing implemented.
+
+### Changed
+- `figlet` renders byte-for-byte identically to patorjk/figlet.js: multi-line
+  input is now stacked with the font's vertical layout (which can fuse the
+  blocks' touching rows) and padded to a uniform row width, glyph rows are laid
+  out ragged rather than pre-padded, and the horizontal overlap is computed with
+  upstream's incremental algorithm rather than a blank-counting approximation.
+  Output for a multi-line render, or for any font whose header enables vertical
+  rules, therefore changes.
+- `figlet.ParseFont` reads the seven code-page glyphs the format mandates after
+  ASCII (Ä Ö Ü ä ö ü ß), which are stored positionally with no code tag; skipping
+  them lost those glyphs *and* mis-read every code-tagged glyph after them.
+- `figlet.ParseFont` rejects an incomplete glyph table instead of half-loading
+  it, and reports a malformed code tag as an error rather than silently treating
+  it as the end of the font. Whole-file size is bounded by
+  `figlet.MaxFontBytes`.
+- A FIGfont parsed from a file no longer falls back to the uppercase or space
+  glyph for an undefined character; it contributes nothing, as upstream does. The
+  capitals-only fonts bundled with this package keep the fallback.
 
 ### Fixed
+- The `figlet` end-mark stripper removed *every* trailing repeat of a glyph row's
+  last character, so a row of `@@@@` vanished and any font whose art ends in the
+  end-mark character was mis-parsed. It now removes one mark (two on a glyph's
+  final row) plus trailing whitespace, as upstream does.
+- `figlet`'s hierarchy and opposite-pair smushing rules used a hand-written rank
+  table that disagreed with upstream's positional one.
+- Line prompts validated the raw input before substituting the default, so a
+  prompt with both a `Default` and a validator that rejects the empty string was
+  unanswerable by pressing Enter.
 - 256-color and truecolor styles resolved their escape codes when the style was
   *built* rather than when it rendered, so a stored style ignored a later
   `SetLevel` and `Style.Level` could not override a color chained before it.

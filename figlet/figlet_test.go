@@ -38,16 +38,40 @@ func TestMultiLine(t *testing.T) {
 	}
 }
 
-// A minimal FIGfont (height 2, full width). The parser tolerates a short font;
-// glyphs are read in ASCII order starting at 32 (space), so this defines space
-// (32) and '!' (33). Endmarks are '@'; '$' is the hardblank.
-const miniFont = `flf2a$ 2 2 4 -1 1
-mini test font
-$$@
-$$@@
-X@
-X@@
-`
+// buildFontWith assembles a *complete* FIGfont: a header, one comment line, and
+// a glyph for every character the format requires (see requiredChars). Entries
+// in art override the default filler glyph, which is how a test gives one
+// specific character real sub-lines.
+//
+// Completeness matters: the parser rejects a font whose glyph table is short,
+// so a two-glyph fixture is no longer a valid font.
+func buildFontWith(header string, height int, art map[rune][]string) string {
+	var b strings.Builder
+	b.WriteString(header + "\n")
+	b.WriteString("comment\n")
+	for _, c := range requiredChars {
+		g := art[c]
+		for r := 0; r < height; r++ {
+			cell := "#"
+			if r < len(g) {
+				cell = g[r]
+			}
+			mark := "@"
+			if r == height-1 {
+				mark = "@@"
+			}
+			b.WriteString(cell + mark + "\n")
+		}
+	}
+	return b.String()
+}
+
+// miniFont is a height-2, full-width font whose '!' glyph is a column of "X"
+// and whose space glyph is two hardblanks.
+var miniFont = buildFontWith("flf2a$ 2 2 4 -1 1", 2, map[rune][]string{
+	' ': {"$$", "$$"},
+	'!': {"X", "X"},
+})
 
 func TestParseAndRenderCustomFont(t *testing.T) {
 	f, err := ParseFont(strings.NewReader(miniFont))
@@ -68,31 +92,28 @@ func TestParseAndRenderCustomFont(t *testing.T) {
 }
 
 func TestSmushLayoutResolution(t *testing.T) {
-	// oldLayout 1 = smushing with the equal-character rule (bit 1).
-	font := `flf2a$ 1 1 3 1 0
-|$@@
-`
-	f, err := ParseFont(strings.NewReader(font))
+	// oldLayout 1 = smushing with the equal-character rule (bit 1), which
+	// resolves to controlled smushing because a rule is enabled.
+	f, err := ParseFont(strings.NewReader(buildFontWith("flf2a$ 1 1 3 1 1", 1, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if layout, rules := f.resolveLayout(LayoutDefault); layout != LayoutSmush || rules&1 == 0 {
-		t.Fatalf("expected smush layout with equal rule, got %v rules=%d", layout, rules)
+	r := f.FittingRules()
+	if r.HorizontalLayout != layoutControlledSmushing || !r.HorizontalRules[0] {
+		t.Fatalf("expected controlled smushing with the equal-character rule, got %+v", r)
 	}
 }
 
 func TestEqualCharSmushing(t *testing.T) {
-	// Build a font whose '!' glyph is a single "|" column, height 1, with
+	// A font whose '!' glyph is a single "|" column, height 1, with
 	// equal-character smushing. Two '!' side by side smush into one "|".
-	font := `flf2a$ 1 1 3 1 0
-$@@
-|@@
-`
-	f, err := ParseFont(strings.NewReader(font))
+	f, err := ParseFont(strings.NewReader(buildFontWith("flf2a$ 1 1 3 1 1", 1, map[rune][]string{
+		' ': {"$"},
+		'!': {"|"},
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// space (32) = "$" (hardblank), '!' (33) = "|".
 	if out := f.Render("!!"); out != "|" {
 		t.Fatalf("equal-char smush = %q, want \"|\"", out)
 	}

@@ -1,5 +1,5 @@
-// Package prompts provides interactive terminal prompts in the spirit of Node's
-// inquirer / @inquirer/prompts, styled with the sibling chalk package. It offers
+// Package prompts provides interactive terminal prompts, a Go port of Node's
+// prompts (terkelg/prompts) styled with the sibling chalk package. It offers
 // text input, password, confirm, number, single-select, and multi-select
 // prompts, plus a paged [Slides] viewer.
 //
@@ -38,17 +38,21 @@
 // strings.NewReader lets you script a prompt for tests or piped input, where the
 // scripted bytes drive the same code path a live keyboard would, and reaching
 // end of input behaves like pressing Enter on the current buffer. An empty
-// submission falls back to the configured default, and [Number] additionally
-// enforces optional Min/Max bounds and integer-only mode.
+// submission falls back to the configured default — before the validator runs,
+// so a default is always an answerable one — and [Number] additionally enforces
+// optional Min/Max bounds and integer-only mode.
 //
-// Parity with inquirer is by feel rather than by API. The prompt types, the
-// green "?" prefix, the pointer and checkbox styling, default values, validation
-// with inline error messages and the answer summary all echo the Node
-// experience. The differences are that configuration is a Go struct instead of
-// an options object, prompts are called as ordinary functions returning
-// (value, error) instead of returning promises, and inquirer features such as
-// separators, paged/filtered lists, editors and a plugin architecture are not
-// included. Styling is fixed by this package rather than themeable.
+// Parity with upstream is measured on the returned values, by a cross-language
+// harness that drives both libraries with the same scripted keystrokes: [Input],
+// [Password], [Select] and [MultiSelect] match exactly, including defaults,
+// initial values, validation retries, choice values and cancellation. What the
+// prompts *draw* is this package's own styling and is deliberately not compared.
+// Configuration is a Go struct instead of an options object, prompts are ordinary
+// functions returning (value, error) rather than promises, and the toggle, list,
+// date and autocomplete types, separators, filtered lists and the plugin
+// architecture are not ported. [Confirm] is line-oriented where upstream submits
+// on the first y/n keypress, and [Number] validates its bounds where upstream
+// clamps; both differences, and the rest, are listed in API-DEVIATIONS.md.
 package prompts
 
 import (
@@ -74,6 +78,18 @@ type Choice struct {
 	Disabled bool
 	// Checked pre-selects the choice in a MultiSelect.
 	Checked bool
+}
+
+// ResolvedValue returns the choice's Value, falling back to its Name when no
+// Value was set. This is the value upstream prompts hands back for a selected
+// choice, and it is what a caller wants when the label *is* the value: reading
+// Value directly gives nil for such a choice, and Choice's own documentation
+// promised the fallback without anything implementing it.
+func (c Choice) ResolvedValue() any {
+	if c.Value != nil {
+		return c.Value
+	}
+	return c.Name
 }
 
 // resolveIO returns the effective input/output, defaulting to os.Stdin/os.Stdout.

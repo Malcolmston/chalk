@@ -85,7 +85,13 @@ func renderPrompt(message, def string) string {
 
 // readLine reads a single line of input, echoing per the mask/hidden rules and
 // re-prompting on validation failure.
-func readLine(in io.Reader, out io.Writer, prompt string, mask rune, hidden bool, validate func(string) error) (string, error) {
+//
+// def is the value an empty submission resolves to. The default is substituted
+// *before* the validator runs, which is what upstream does and the only order
+// that makes sense: a prompt with both a default and a validator that rejects
+// the empty string used to be unanswerable by pressing Enter, even though the
+// default itself was perfectly valid.
+func readLine(in io.Reader, out io.Writer, prompt, def string, mask rune, hidden bool, validate func(string) error) (string, error) {
 	restore := enterRaw(in)
 	defer restore()
 	kr := newKeyReader(in)
@@ -97,6 +103,9 @@ func readLine(in io.Reader, out io.Writer, prompt string, mask rune, hidden bool
 		switch k.typ {
 		case keyEnter:
 			line := string(buf)
+			if line == "" {
+				line = def
+			}
 			if validate != nil {
 				if err := validate(line); err != nil {
 					writeString(out, "\r\n"+styleError.Sprint("✖ "+err.Error())+"\r\n")
@@ -124,6 +133,9 @@ func readLine(in io.Reader, out io.Writer, prompt string, mask rune, hidden bool
 			// newline. There is no input left to re-prompt with, so a rejected
 			// value becomes the error.
 			line := string(buf)
+			if line == "" {
+				line = def
+			}
 			if validate != nil {
 				if err := validate(line); err != nil {
 					return "", err
@@ -147,12 +159,9 @@ func readLine(in io.Reader, out io.Writer, prompt string, mask rune, hidden bool
 // Input prompts for a line of text.
 func Input(cfg InputConfig) (string, error) {
 	in, out := resolveIO(cfg.In, cfg.Out)
-	val, err := readLine(in, out, renderPrompt(cfg.Message, cfg.Default), 0, false, cfg.Validate)
+	val, err := readLine(in, out, renderPrompt(cfg.Message, cfg.Default), cfg.Default, 0, false, cfg.Validate)
 	if err != nil {
 		return "", err
-	}
-	if val == "" {
-		val = cfg.Default
 	}
 	if cfg.Transform != nil {
 		val = cfg.Transform(val)
@@ -164,7 +173,7 @@ func Input(cfg InputConfig) (string, error) {
 func Password(cfg PasswordConfig) (string, error) {
 	in, out := resolveIO(cfg.In, cfg.Out)
 	hidden := cfg.Mask == 0
-	return readLine(in, out, renderPrompt(cfg.Message, ""), cfg.Mask, hidden, cfg.Validate)
+	return readLine(in, out, renderPrompt(cfg.Message, ""), "", cfg.Mask, hidden, cfg.Validate)
 }
 
 // Confirm prompts for a yes/no answer, returning the boolean result.
@@ -175,7 +184,7 @@ func Confirm(cfg ConfirmConfig) (bool, error) {
 		hint = "(Y/n)"
 	}
 	prompt := stylePrefix.Sprint("?") + " " + styleMessage.Sprint(cfg.Message) + " " + styleDim.Sprint(hint) + " "
-	line, err := readLine(in, out, prompt, 0, false, nil)
+	line, err := readLine(in, out, prompt, "", 0, false, nil)
 	if err != nil {
 		return false, err
 	}
@@ -234,7 +243,7 @@ func Number(cfg NumberConfig) (float64, error) {
 		return nil
 	}
 
-	line, err := readLine(in, out, renderPrompt(cfg.Message, def), 0, false, validate)
+	line, err := readLine(in, out, renderPrompt(cfg.Message, def), def, 0, false, validate)
 	if err != nil {
 		return 0, err
 	}

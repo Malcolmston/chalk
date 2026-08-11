@@ -7,17 +7,9 @@ import (
 )
 
 // buildFont assembles a minimal but complete font: a header, one comment line,
-// and one row per required glyph (ASCII 32..126) at the given height.
+// and a glyph for every character the format requires, at the given height.
 func buildFont(header string, height int) string {
-	var b strings.Builder
-	b.WriteString(header + "\n")
-	b.WriteString("comment\n")
-	for c := 32; c <= 126; c++ {
-		for r := 0; r < height; r++ {
-			b.WriteString(strings.Repeat("#", r+1) + "@\n")
-		}
-	}
-	return b.String()
+	return buildFontWith(header, height, nil)
 }
 
 // TestHeaderRejectsNonNumericFields covers the strict-parsing fix. The header
@@ -93,7 +85,7 @@ func TestParseCharCodeStrict(t *testing.T) {
 		{"0X41 A", 'A'},
 		{"0101 A", 'A'}, // octal, as C notation and the FIGfont spec allow
 		{"+65 A", 'A'},
-		{"-1 deleted", -1}, // negative codes are legal and simply never match
+		{"-2 negative", -2}, // negative codes are legal and simply never match
 		{"1114111 max", 0x10ffff},
 	}
 	for _, c := range ok {
@@ -110,6 +102,8 @@ func TestParseCharCodeStrict(t *testing.T) {
 	bad := []string{
 		"", "  ", "notacode", "12abc", "0x41zzz", "0xzz", "0x", "-", "+",
 		"1114112 past max rune", "99999999999999999999",
+		// The FIGfont spec singles out -1 as forbidden.
+		"-1 deleted", "-0x1",
 	}
 	for _, in := range bad {
 		if got, err := parseCharCode(in); err == nil {
@@ -159,57 +153,62 @@ func TestMalformedFontsNeverPanic(t *testing.T) {
 	}
 }
 
-// TestRenderWidthWraps covers Options.Width, which was documented but ignored
-// until now: the field existed on Options and nothing ever read it.
+// TestRenderWidthWraps covers Options.Width and Options.WhitespaceBreak.
 func TestRenderWidthWraps(t *testing.T) {
-	one := blockWidthOf(t, Render("one"))
-	oneTwo := blockWidthOf(t, Render("one two"))
-	if oneTwo <= one {
-		t.Fatalf("sanity: %q is not wider than %q", "one two", "one")
-	}
-
-	// A width between the two must split the words onto separate blocks.
-	wrapped := Render("one two", Options{Width: oneTwo - 1})
-	blocks := len(strings.Split(wrapped, "\n")) / BuiltinFont().Height()
-	if blocks != 2 {
-		t.Errorf("Render with Width=%d produced %d blocks, want 2", oneTwo-1, blocks)
-	}
-	if got := blockWidthOf(t, wrapped); got > oneTwo-1 {
-		t.Errorf("wrapped width = %d, want <= %d", got, oneTwo-1)
-	}
+	plain := Render("one two")
+	natural := widestRow(plain)
 
 	// A generous width leaves the line alone.
-	if got := Render("one two", Options{Width: 1000}); got != Render("one two") {
-		t.Errorf("Width=1000 changed the output")
-	}
-	// Width smaller than a single word still emits that word rather than
-	// looping forever or dropping it.
-	tiny := Render("one two", Options{Width: 1})
-	if len(strings.Split(tiny, "\n"))/BuiltinFont().Height() != 2 {
-		t.Errorf("Width=1 produced %q", tiny)
+	if got := Render("one two", Options{Width: natural + 10}); got != plain {
+		t.Errorf("a width wider than the text changed the output")
 	}
 	// Zero and negative widths mean "no wrapping".
-	if got := Render("one two", Options{Width: -5}); got != Render("one two") {
-		t.Errorf("negative Width changed the output")
+	for _, w := range []int{0, -5} {
+		if got := Render("one two", Options{Width: w}); got != plain {
+			t.Errorf("Width=%d changed the output", w)
+		}
+	}
+	// A width below the natural width must split the text over more rows.
+	for _, wsb := range []bool{false, true} {
+		wrapped := Render("one two", Options{Width: natural - 1, WhitespaceBreak: wsb})
+		if rows(wrapped) <= rows(plain) {
+			t.Errorf("WhitespaceBreak=%v: wrapping produced %d rows, want more than %d",
+				wsb, rows(wrapped), rows(plain))
+		}
+		if got := widestRow(wrapped); got >= natural {
+			t.Errorf("WhitespaceBreak=%v: wrapped width = %d, want < %d", wsb, got, natural)
+		}
+		// A width no glyph can fit must still terminate and still emit ink.
+		if tiny := Render("one two", Options{Width: 1, WhitespaceBreak: wsb}); !strings.Contains(tiny, "#") {
+			t.Errorf("WhitespaceBreak=%v: Width=1 produced no output", wsb)
+		}
 	}
 }
 
-// blockWidthOf measures the widest row of rendered output.
-func blockWidthOf(t *testing.T, s string) int {
-	t.Helper()
-	return blockWidth(strings.Split(s, "\n"))
+// widestRow measures the widest row of rendered output.
+func widestRow(s string) int {
+	w := 0
+	for _, line := range strings.Split(s, "\n") {
+		if n := len([]rune(line)); n > w {
+			w = n
+		}
+	}
+	return w
 }
 
-// TestMergeDoesNotAliasInput is a regression test: in the full-width layout
-// merge appended to the caller's rows in place, so a block held on to while a
-// longer candidate was being built silently grew too. Wrapping surfaced it as
-// duplicated words.
-func TestMergeDoesNotAliasInput(t *testing.T) {
+// rows counts the rows of rendered output.
+func rows(s string) int { return len(strings.Split(s, "\n")) }
+
+// TestRenderIsIdempotent is a regression test for block aliasing: the assembly
+// keeps earlier blocks alive while it builds candidates (see the wrapping path),
+// so a merge that wrote into its input corrupted them and, with a font whose
+// glyphs are shared with the registry, corrupted the font itself.
+func TestRenderIsIdempotent(t *testing.T) {
 	f := BuiltinFont()
-	rows := f.appendRunes(nil, "a", LayoutFull, 0)
-	before := f.finish(rows)
-	_ = f.appendRunes(rows, "bc", LayoutFull, 0)
-	if after := f.finish(rows); after != before {
-		t.Errorf("appendRunes mutated its input:\n%q\nbecame\n%q", before, after)
+	for _, opts := range []Options{{}, {Layout: LayoutFull}, {Width: 12}, {Width: 12, WhitespaceBreak: true}} {
+		first := f.Render("one two three", opts)
+		if second := f.Render("one two three", opts); second != first {
+			t.Errorf("Render(%+v) is not idempotent:\n%q\nbecame\n%q", opts, first, second)
+		}
 	}
 }
