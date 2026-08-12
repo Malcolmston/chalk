@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-11
+### Added
+- **fzf-style fuzzy prompting** (`chalk/prompts`): `Fuzzy` narrows a candidate list
+  as the user types, highlighting the matched characters. The matcher is a real
+  ranking function, not a substring test — word-boundary and prefix matches score
+  higher, consecutive runs beat scattered ones, shorter gaps and shorter candidates
+  win ties, and ties break deterministically so the list never jitters between
+  renders. Case-insensitive with smart-case (an uppercase character in the query
+  makes it case-sensitive). It reuses the existing key reader, cancellation and
+  non-TTY handling rather than duplicating them.
+- **`chalk/progress`** — progress bars. Determinate and indeterminate modes,
+  percentage/ETA/rate, IEC byte formatting (1536 renders as 1.5 KiB), a
+  configurable charset and template, and `MultiBar` for concurrent bars sharing one
+  writer. The clock is injectable, so ETA and rate are tested without sleeping.
+- **`chalk/spinner`** — loaders. Frame sets (braille dots, line, bars, or your own),
+  `Succeed`/`Fail`/`Warn`/`Info` with per-state symbols and colours, and
+  `UpdateText` while running. The ticker is injectable for deterministic tests.
+- **`chalk/pipe`** — piping and stream detection. `IsTerminal`, `IsPiped`,
+  `IsRedirected`, `Size`/`Width`/`Height` with documented fallbacks, colour-level
+  resolution honouring NO_COLOR, CLICOLOR, CLICOLOR_FORCE, FORCE_COLOR and
+  TERM=dumb, plus `ReadAll`/`Lines` that read piped stdin without hanging when
+  stdin is a terminal.
+- **`chalk/image`** — images in the console. Half-block ANSI rendering (two vertical
+  pixels per cell) with truecolor, 256-colour and greyscale fallbacks, aspect
+  correction for non-square cells, fit-to-width/height/box, and optional native
+  iTerm2 and Kitty protocols detected conservatively with a fall back to ANSI when
+  unsure — a wrong guess there dumps base64 across the screen.
+
+### Notes
+Every one of these degrades when the output is not a terminal, which is where
+packages like these usually go wrong. Verified by running each against a
+non-terminal writer and inspecting the bytes: progress emits bounded plain-text
+lines with no cursor-movement or carriage-return escapes at all, the spinner does
+not animate (it prints the label once and the resolved state once), and the image
+renderer emits nothing unless explicitly forced. The spinner leaks no goroutine
+across 50 start/stop cycles including double Start and repeated Stop.
+
+No new dependencies: standard library plus golang.org/x/term, as before.
+
 ## [0.5.0] - 2026-08-11
 ### Added
 - **Interactive console input** (`chalk/prompts`): a paged `Slides` viewer with
