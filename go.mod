@@ -1,7 +1,7 @@
 module github.com/malcolmston/chalk
 
-go 1.23
+go 1.26.0
 
-require golang.org/x/term v0.17.0
+require golang.org/x/term v0.46.0
 
-require golang.org/x/sys v0.17.0 // indirect
+require golang.org/x/sys v0.48.0 // indirect
